@@ -43,3 +43,10 @@ export type {
   UIStore,
   DockPosition,
 } from './state';
+
+// ==================== 窗口管理 ====================
+export {
+  WindowManager,
+  useWindowManager,
+  resetWindowManager,
+} from './window-manager';

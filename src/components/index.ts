@@ -3,12 +3,19 @@
  * @module components
  */
 
-// 功能组件将在后续阶段实现
-// export { Window } from './window';
+// 组件版本
+export const COMPONENTS_VERSION = '1.0.0';
+
+// ==================== 窗口组件 ====================
+export {
+  BaseWindow,
+  CardWindow,
+  ToolWindow,
+  WindowMenu,
+} from './window';
+
+// 后续阶段实现的组件
 // export { FileManager } from './file-manager';
 // export { EditPanel } from './edit-panel';
 // export { CardBoxLibrary } from './card-box-library';
 // export { Dock } from './dock';
-
-// 临时导出占位
-export const COMPONENTS_VERSION = '1.0.0';

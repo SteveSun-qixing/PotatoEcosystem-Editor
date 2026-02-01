@@ -1,0 +1,415 @@
+<script setup lang="ts">
+/**
+ * 卡片窗口组件
+ * @module components/window/CardWindow
+ * @description 用于显示和编辑卡片内容的窗口组件
+ */
+
+import { computed } from 'vue';
+import BaseWindow from './BaseWindow.vue';
+import WindowMenu from './WindowMenu.vue';
+import { useCardStore } from '@/core/state';
+import type { CardWindowConfig, WindowPosition, WindowSize } from '@/types';
+
+interface Props {
+  /** 窗口配置 */
+  config: CardWindowConfig;
+}
+
+const props = defineProps<Props>();
+
+const emit = defineEmits<{
+  /** 关闭窗口 */
+  close: [];
+  /** 聚焦窗口 */
+  focus: [];
+  /** 更新配置 */
+  'update:config': [config: Partial<CardWindowConfig>];
+}>();
+
+const cardStore = useCardStore();
+
+/** 获取卡片信息 */
+const cardInfo = computed(() => cardStore.openCards.get(props.config.cardId));
+
+/** 是否正在编辑 */
+const isEditing = computed(() => props.config.isEditing);
+
+/** 窗口状态 */
+const windowState = computed(() => props.config.state);
+
+/** 封面比例选项（预留用于封面比例选择器） */
+const _COVER_RATIOS = [
+  { value: '1:1', label: '正方形' },
+  { value: '3:4', label: '标准照片' },
+  { value: '9:16', label: '手机比例' },
+  { value: '16:9', label: '视频比例' },
+] as const;
+
+/**
+ * 切换编辑模式
+ */
+function toggleEditMode(): void {
+  emit('update:config', { isEditing: !isEditing.value });
+}
+
+/**
+ * 切换到封面模式
+ */
+function switchToCover(): void {
+  emit('update:config', { state: 'cover' });
+}
+
+/**
+ * 从封面恢复
+ */
+function restoreFromCover(): void {
+  emit('update:config', { state: 'normal' });
+}
+
+/**
+ * 设置封面比例（预留用于封面比例选择器）
+ */
+function _setCoverRatio(ratio: string): void {
+  emit('update:config', { coverRatio: ratio });
+}
+
+/**
+ * 更新位置
+ */
+function updatePosition(position: WindowPosition): void {
+  emit('update:config', { position });
+}
+
+/**
+ * 更新大小
+ */
+function updateSize(size: WindowSize): void {
+  emit('update:config', { size });
+}
+
+/**
+ * 更新标题
+ */
+function updateTitle(title: string): void {
+  if (cardInfo.value) {
+    cardStore.updateCardMetadata(props.config.cardId, { name: title });
+  }
+}
+
+/**
+ * 关闭窗口
+ */
+function handleClose(): void {
+  emit('close');
+}
+
+/**
+ * 最小化
+ */
+function handleMinimize(): void {
+  emit('update:config', { state: 'minimized' });
+}
+
+/**
+ * 收起/展开
+ */
+function handleCollapse(): void {
+  const newState = windowState.value === 'collapsed' ? 'normal' : 'collapsed';
+  emit('update:config', { state: newState });
+}
+
+/**
+ * 聚焦窗口
+ */
+function handleFocus(): void {
+  emit('focus');
+}
+
+/**
+ * 打开设置（暂未实现）
+ */
+function handleSettings(): void {
+  // TODO: 实现设置面板
+}
+
+/**
+ * 选择基础卡片
+ */
+function selectBaseCard(baseCardId: string): void {
+  cardStore.setSelectedBaseCard(baseCardId);
+}
+
+/**
+ * 获取封面比例样式
+ */
+function getCoverAspectRatio(ratio?: string): string {
+  return ratio?.replace(':', '/') || '3/4';
+}
+</script>
+
+<template>
+  <!-- 封面模式 -->
+  <div
+    v-if="windowState === 'cover'"
+    class="card-cover"
+    :style="{ transform: `translate(${config.position.x}px, ${config.position.y}px)` }"
+    @click="restoreFromCover"
+  >
+    <div
+      class="card-cover__image"
+      :style="{ aspectRatio: getCoverAspectRatio(config.coverRatio) }"
+    >
+      <!-- 封面内容由渲染器提供 -->
+      <slot name="cover">
+        <div class="card-cover__placeholder">
+          {{ cardInfo?.metadata.name || '未命名卡片' }}
+        </div>
+      </slot>
+    </div>
+    <div class="card-cover__title">
+      {{ cardInfo?.metadata.name || '未命名卡片' }}
+    </div>
+  </div>
+
+  <!-- 正常窗口模式 -->
+  <BaseWindow
+    v-else
+    :config="config"
+    @update:position="updatePosition"
+    @update:size="updateSize"
+    @focus="handleFocus"
+    @close="handleClose"
+    @minimize="handleMinimize"
+    @collapse="handleCollapse"
+  >
+    <template #header>
+      <WindowMenu
+        :title="cardInfo?.metadata.name || '未命名卡片'"
+        :is-editing="isEditing"
+        :show-lock="true"
+        :show-cover="true"
+        :show-settings="true"
+        @toggle-edit="toggleEditMode"
+        @switch-to-cover="switchToCover"
+        @settings="handleSettings"
+        @update:title="updateTitle"
+      />
+    </template>
+
+    <template #default>
+      <div class="card-window__content">
+        <!-- 卡片内容由渲染器提供 -->
+        <slot>
+          <div v-if="cardInfo?.isLoading" class="card-window__loading">
+            <span class="card-window__loading-icon">⏳</span>
+            <span class="card-window__loading-text">加载中...</span>
+          </div>
+          <div v-else class="card-window__body">
+            <!-- 基础卡片列表 -->
+            <div
+              v-for="baseCard in cardInfo?.structure"
+              :key="baseCard.id"
+              class="card-window__base-card"
+              :class="{
+                'card-window__base-card--selected': cardStore.selectedBaseCardId === baseCard.id,
+                'card-window__base-card--editing': isEditing,
+              }"
+              @click="selectBaseCard(baseCard.id)"
+            >
+              <div class="card-window__base-card-header">
+                <span class="card-window__base-card-type">{{ baseCard.type }}</span>
+                <span class="card-window__base-card-id">{{ baseCard.id.slice(0, 8) }}</span>
+              </div>
+              <div class="card-window__base-card-content">
+                <!-- 基础卡片渲染器将在此处渲染内容 -->
+                <slot :name="`base-card-${baseCard.id}`">
+                  <div class="card-window__base-card-placeholder">
+                    {{ baseCard.type }} 渲染区域
+                  </div>
+                </slot>
+              </div>
+            </div>
+
+            <!-- 空状态 -->
+            <div
+              v-if="!cardInfo?.structure?.length"
+              class="card-window__empty"
+            >
+              <span class="card-window__empty-icon">📄</span>
+              <span class="card-window__empty-text">暂无内容</span>
+              <span v-if="isEditing" class="card-window__empty-hint">
+                从卡箱库拖拽基础卡片到此处
+              </span>
+            </div>
+          </div>
+        </slot>
+      </div>
+    </template>
+  </BaseWindow>
+</template>
+
+<style scoped>
+/* 封面模式样式 */
+.card-cover {
+  position: absolute;
+  cursor: pointer;
+  transition: transform var(--chips-transition-fast, 0.15s) ease;
+}
+
+.card-cover:hover {
+  transform: scale(1.02);
+}
+
+.card-cover__image {
+  width: 200px;
+  background: var(--chips-color-surface, #ffffff);
+  border-radius: var(--chips-radius-md, 8px);
+  overflow: hidden;
+  box-shadow: var(--chips-shadow-md, 0 4px 12px rgba(0, 0, 0, 0.1));
+  transition: box-shadow var(--chips-transition-fast, 0.15s) ease;
+}
+
+.card-cover:hover .card-cover__image {
+  box-shadow: var(--chips-shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.15));
+}
+
+.card-cover__placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--chips-color-surface-variant, #f5f5f5);
+  color: var(--chips-color-text-secondary, #666666);
+  padding: var(--chips-spacing-md, 12px);
+  text-align: center;
+  font-size: var(--chips-font-size-sm, 14px);
+}
+
+.card-cover__title {
+  margin-top: var(--chips-spacing-sm, 8px);
+  text-align: center;
+  font-size: var(--chips-font-size-xs, 12px);
+  color: var(--chips-color-text-secondary, #666666);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+/* 窗口内容样式 */
+.card-window__content {
+  padding: var(--chips-spacing-md, 16px);
+  min-height: 200px;
+}
+
+.card-window__loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  gap: var(--chips-spacing-sm, 8px);
+}
+
+.card-window__loading-icon {
+  font-size: 24px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.card-window__loading-text {
+  color: var(--chips-color-text-secondary, #666666);
+  font-size: var(--chips-font-size-sm, 14px);
+}
+
+.card-window__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--chips-spacing-md, 12px);
+}
+
+/* 基础卡片样式 */
+.card-window__base-card {
+  border: 1px solid var(--chips-color-border, #e0e0e0);
+  border-radius: var(--chips-radius-sm, 6px);
+  overflow: hidden;
+  transition: border-color var(--chips-transition-fast, 0.15s) ease,
+              box-shadow var(--chips-transition-fast, 0.15s) ease;
+}
+
+.card-window__base-card--editing {
+  cursor: pointer;
+}
+
+.card-window__base-card--editing:hover {
+  border-color: var(--chips-color-primary, #3b82f6);
+}
+
+.card-window__base-card--selected {
+  border-color: var(--chips-color-primary, #3b82f6);
+  box-shadow: 0 0 0 2px var(--chips-color-primary-light, rgba(59, 130, 246, 0.2));
+}
+
+.card-window__base-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--chips-spacing-xs, 4px) var(--chips-spacing-sm, 8px);
+  background: var(--chips-color-surface-variant, #f5f5f5);
+  font-size: var(--chips-font-size-xs, 12px);
+}
+
+.card-window__base-card-type {
+  color: var(--chips-color-text-primary, #1a1a1a);
+  font-weight: var(--chips-font-weight-medium, 500);
+}
+
+.card-window__base-card-id {
+  color: var(--chips-color-text-tertiary, #999999);
+  font-family: monospace;
+}
+
+.card-window__base-card-content {
+  padding: var(--chips-spacing-md, 12px);
+}
+
+.card-window__base-card-placeholder {
+  padding: var(--chips-spacing-lg, 24px);
+  text-align: center;
+  color: var(--chips-color-text-secondary, #666666);
+  background: var(--chips-color-surface-variant, #f5f5f5);
+  border-radius: var(--chips-radius-sm, 4px);
+}
+
+/* 空状态样式 */
+.card-window__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--chips-spacing-xl, 48px) var(--chips-spacing-md, 16px);
+  text-align: center;
+  gap: var(--chips-spacing-sm, 8px);
+}
+
+.card-window__empty-icon {
+  font-size: 48px;
+  opacity: 0.5;
+}
+
+.card-window__empty-text {
+  font-size: var(--chips-font-size-md, 16px);
+  color: var(--chips-color-text-secondary, #666666);
+}
+
+.card-window__empty-hint {
+  font-size: var(--chips-font-size-sm, 14px);
+  color: var(--chips-color-text-tertiary, #999999);
+}
+</style>
