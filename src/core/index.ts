@@ -70,3 +70,67 @@ export type {
   ClipboardOperation,
   ClipboardData,
 } from './file-service';
+
+// ==================== 命令管理 ====================
+export {
+  CommandManager,
+  useCommandManager,
+  resetCommandManager,
+} from './command-manager';
+
+export type {
+  Command,
+  CommandHistory,
+  CommandManagerConfig,
+  CommandManagerEvents,
+  CommandManagerEventCallback,
+} from './command-manager';
+
+// ==================== 命令 ====================
+export {
+  // 卡片命令
+  AddBaseCardCommand,
+  RemoveBaseCardCommand,
+  MoveBaseCardCommand,
+  UpdateBaseCardConfigCommand,
+  BatchCardCommand,
+  // 窗口命令
+  CreateWindowCommand,
+  CloseWindowCommand,
+  MoveWindowCommand,
+  ResizeWindowCommand,
+  SetWindowStateCommand,
+  BatchWindowCommand,
+} from './commands';
+
+// ==================== 拖放管理 ====================
+export {
+  DragDropManager,
+  useDragDropManager,
+  resetDragDropManager,
+  useFileDrop,
+  useCardSort,
+  useCardNest,
+  detectFileType,
+  detectFileTypes,
+} from './drag-drop-manager';
+
+export type {
+  DragSourceType,
+  DropTargetType,
+  DropEffect,
+  FileDropType,
+  DragSourceConfig,
+  DropTargetConfig,
+  DragSource,
+  DropTarget,
+  Position,
+  InsertPosition,
+  DragDropState,
+  FileDragData,
+  BaseCardDragData,
+  CardNestDragData,
+  UseFileDropReturn,
+  UseCardSortReturn,
+  UseCardNestReturn,
+} from './drag-drop-manager';

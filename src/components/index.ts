@@ -72,3 +72,25 @@ export {
 export type {
   MenuItem,
 } from './file-manager';
+
+// ==================== 拖放组件 ====================
+export {
+  FileDropZone,
+  InsertIndicator,
+  DropHighlight,
+  DragGhost,
+  SortableList,
+  NestableCard,
+} from './drag-drop';
+
+export type {
+  DragPreviewData,
+  InsertIndicatorConfig,
+  DropZoneConfig,
+  SortConfig,
+  NestConfig,
+  DragDropEventData,
+} from './drag-drop';
+
+// ==================== 历史面板组件 ====================
+export { HistoryPanel } from './history-panel';
