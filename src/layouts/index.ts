@@ -19,8 +19,30 @@ export type {
   Point,
 } from './infinite-canvas';
 
-// 工作台布局（Phase9 实现）
-// export { Workbench } from './workbench';
+// 工作台布局
+export {
+  Workbench,
+  SidePanel,
+  MainArea,
+  useWorkbenchControls,
+} from './workbench';
+
+export type {
+  WorkbenchOptions,
+  WorkbenchState,
+  WorkbenchControlsReturn,
+  SidePanelPosition,
+  TabInfo,
+  WorkbenchLayoutConfig,
+} from './workbench';
+
+// 布局切换
+export { default as LayoutSwitcher } from './LayoutSwitcher.vue';
+export { useLayoutSwitch } from './use-layout-switch';
+export type {
+  LayoutSwitchOptions,
+  LayoutSwitchReturn,
+} from './use-layout-switch';
 
 /** 布局模块版本号 */
 export const LAYOUTS_VERSION = '1.0.0';
