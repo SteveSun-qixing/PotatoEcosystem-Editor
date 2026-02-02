@@ -14,8 +14,10 @@ export {
   WindowMenu,
 } from './window';
 
+// ==================== 程序坞组件 ====================
+export { Dock, DockItem } from './dock';
+
 // 后续阶段实现的组件
 // export { FileManager } from './file-manager';
 // export { EditPanel } from './edit-panel';
 // export { CardBoxLibrary } from './card-box-library';
-// export { Dock } from './dock';
