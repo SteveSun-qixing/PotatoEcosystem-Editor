@@ -50,3 +50,23 @@ export {
   useWindowManager,
   resetWindowManager,
 } from './window-manager';
+
+// ==================== 文件服务 ====================
+export {
+  FileService,
+  getFileService,
+  resetFileService,
+  getFileType,
+  isValidFileName,
+} from './file-service';
+
+export type {
+  FileType,
+  FileInfo,
+  CreateCardOptions,
+  CreateBoxOptions,
+  CreateFolderOptions,
+  FileOperationResult,
+  ClipboardOperation,
+  ClipboardData,
+} from './file-service';
