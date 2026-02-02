@@ -11,11 +11,27 @@ import WindowLayer from './WindowLayer.vue';
 import ZoomControl from './ZoomControl.vue';
 import { useUIStore } from '@/core/state';
 import { useCanvasControls } from './use-canvas';
+import { useGlobalDragCreate, DragPreview } from '@/components/card-box-library';
+import type { DragData } from '@/components/card-box-library';
 
 const uiStore = useUIStore();
 
+const emit = defineEmits<{
+  /** 拖放创建卡片/箱子 */
+  dropCreate: [data: DragData, worldPosition: { x: number; y: number }];
+}>();
+
 /** 画布容器引用 */
 const canvasRef = ref<HTMLElement | null>(null);
+
+/** 全局拖放创建实例 */
+const dragCreate = useGlobalDragCreate();
+
+/** 拖放悬停状态 */
+const isDragOver = ref(false);
+
+/** 拖放预览位置 */
+const dragPreviewPosition = ref({ x: 0, y: 0 });
 
 /** 使用画布控制 hook */
 const {
@@ -93,6 +109,74 @@ function handleKeyDown(e: KeyboardEvent): void {
   }
 }
 
+/**
+ * 处理拖放进入
+ * @param e - 拖放事件
+ */
+function handleDragEnter(e: DragEvent): void {
+  e.preventDefault();
+  isDragOver.value = true;
+}
+
+/**
+ * 处理拖放悬停
+ * @param e - 拖放事件
+ */
+function handleDragOver(e: DragEvent): void {
+  e.preventDefault();
+
+  // 更新拖放效果
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'copy';
+  }
+
+  // 更新预览位置
+  dragPreviewPosition.value = { x: e.clientX, y: e.clientY };
+  dragCreate.updatePreview(e.clientX, e.clientY);
+}
+
+/**
+ * 处理拖放离开
+ * @param e - 拖放事件
+ */
+function handleDragLeave(e: DragEvent): void {
+  // 检查是否真正离开了画布（而不是进入了子元素）
+  const rect = canvasRef.value?.getBoundingClientRect();
+  if (rect) {
+    const { clientX, clientY } = e;
+    if (
+      clientX < rect.left ||
+      clientX > rect.right ||
+      clientY < rect.top ||
+      clientY > rect.bottom
+    ) {
+      isDragOver.value = false;
+    }
+  }
+}
+
+/**
+ * 处理拖放释放
+ * @param e - 拖放事件
+ */
+function handleDrop(e: DragEvent): void {
+  e.preventDefault();
+  isDragOver.value = false;
+
+  // 获取拖放数据
+  const data = dragCreate.getDragDataFromEvent(e);
+  if (!data) return;
+
+  // 计算世界坐标
+  const worldPosition = screenToWorld(e.clientX, e.clientY);
+
+  // 触发创建事件
+  emit('dropCreate', data, worldPosition);
+
+  // 结束拖放
+  dragCreate.endDrag();
+}
+
 onMounted(() => {
   document.addEventListener('keydown', handleKeyDown);
 });
@@ -106,12 +190,17 @@ onUnmounted(() => {
   <div
     ref="canvasRef"
     class="infinite-canvas"
+    :class="{ 'infinite-canvas--drag-over': isDragOver }"
     :style="{ cursor: canvasCursor }"
     @wheel.prevent="handleWheel"
     @mousedown="handleMouseDown"
     @mousemove="handleMouseMove"
     @mouseup="handleMouseUp"
     @mouseleave="handleMouseUp"
+    @dragenter="handleDragEnter"
+    @dragover="handleDragOver"
+    @dragleave="handleDragLeave"
+    @drop="handleDrop"
   >
     <!-- 网格背景 -->
     <div
@@ -148,6 +237,13 @@ onUnmounted(() => {
       @reset="resetView"
       @fit="fitToContent"
     />
+
+    <!-- 拖放预览 -->
+    <DragPreview
+      v-if="isDragOver && dragCreate.dragState.value.data"
+      :data="dragCreate.dragState.value.data"
+      :position="dragPreviewPosition"
+    />
   </div>
 </template>
 
@@ -159,6 +255,11 @@ onUnmounted(() => {
   overflow: hidden;
   background: var(--chips-color-background, #fafafa);
   user-select: none;
+  transition: background-color 0.2s ease;
+}
+
+.infinite-canvas--drag-over {
+  background-color: var(--chips-color-primary-light, rgba(24, 144, 255, 0.05));
 }
 
 .infinite-canvas__grid {
