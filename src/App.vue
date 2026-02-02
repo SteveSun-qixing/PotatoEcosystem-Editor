@@ -1,31 +1,56 @@
 <script setup lang="ts">
-  /**
-   * Chips Editor - 根组件
-   */
-  import { ref, onMounted } from 'vue';
+/**
+ * Chips Editor - 根组件
+ * @module App
+ * @description 编辑器应用入口，集成无限画布布局
+ */
 
-  // 应用状态
-  const isReady = ref(false);
-  const errorMessage = ref<string | null>(null);
+import { ref, onMounted, provide, computed } from 'vue';
+import { InfiniteCanvas } from '@/layouts';
+import { useEditorStore, useUIStore } from '@/core/state';
 
-  // 重试处理
-  const handleRetry = () => {
-    globalThis.location.reload();
-  };
+/** 编辑器状态 Store */
+const editorStore = useEditorStore();
+const uiStore = useUIStore();
 
-  // 初始化应用
-  onMounted(async () => {
-    try {
-      // TODO: 初始化编辑器核心
-      // 模拟初始化延迟
-      await new Promise((resolve) => setTimeout(resolve, 500));
+/** 应用状态 */
+const isReady = ref(false);
+const errorMessage = ref<string | null>(null);
 
-      isReady.value = true;
-    } catch (error) {
-      errorMessage.value = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[Chips Editor] Initialization failed:', error);
-    }
-  });
+/** 当前布局类型 */
+const currentLayout = computed(() => editorStore.currentLayout);
+
+/**
+ * 重试处理
+ */
+function handleRetry(): void {
+  globalThis.location.reload();
+}
+
+/**
+ * 初始化应用
+ */
+onMounted(async () => {
+  try {
+    // TODO: 初始化编辑器核心
+    // 模拟初始化延迟
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    // 设置默认布局
+    editorStore.setLayout('infinite-canvas');
+
+    isReady.value = true;
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[Chips Editor] Initialization failed:', error);
+  }
+});
+
+/** 提供编辑器上下文给子组件 */
+provide('editorContext', {
+  editorStore,
+  uiStore,
+});
 </script>
 
 <template>
@@ -55,127 +80,119 @@
     </div>
 
     <!-- 编辑器主体 -->
-    <div
-      v-else
-      class="editor-container"
-    >
-      <!-- 编辑器内容将在后续阶段实现 -->
-      <div class="welcome-message">
-        <h1>Chips Editor</h1>
-        <p>Card editing engine initialized successfully</p>
-        <p class="version">v1.0.0</p>
+    <template v-else>
+      <!-- 无限画布布局 -->
+      <InfiniteCanvas v-if="currentLayout === 'infinite-canvas'">
+        <template #desktop>
+          <!-- 桌面内容由 DesktopLayer 管理 -->
+        </template>
+
+        <template #window>
+          <!-- 工具窗口内容 -->
+          <!-- 文件管理器（Phase5 实现） -->
+          <!-- 编辑面板（Phase6 实现） -->
+          <!-- 卡箱库（Phase7 实现） -->
+        </template>
+      </InfiniteCanvas>
+
+      <!-- 工作台布局（Phase9 实现） -->
+      <!-- <Workbench v-else-if="currentLayout === 'workbench'" /> -->
+
+      <!-- 未知布局回退 -->
+      <div
+        v-else
+        class="unknown-layout"
+      >
+        <p>Unknown layout: {{ currentLayout }}</p>
       </div>
-    </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
-  #chips-editor {
-    width: 100%;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    background-color: var(--color-background);
-  }
+#chips-editor {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--chips-color-background, #fafafa);
+}
 
-  /* 加载状态样式 */
-  .loading-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-md);
-  }
+/* 加载状态样式 */
+.loading-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--chips-spacing-md, 16px);
+}
 
-  .loading-spinner {
-    width: 40px;
-    height: 40px;
-    border: 3px solid var(--color-border);
-    border-top-color: var(--color-primary);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--chips-color-border, #e0e0e0);
+  border-top-color: var(--chips-color-primary, #3b82f6);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
 
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
+}
 
-  .loading-text {
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
-  }
+.loading-text {
+  color: var(--chips-color-text-secondary, #666666);
+  font-size: var(--chips-font-size-sm, 14px);
+}
 
-  /* 错误状态样式 */
-  .error-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-lg);
-  }
+/* 错误状态样式 */
+.error-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--chips-spacing-sm, 8px);
+  padding: var(--chips-spacing-lg, 24px);
+}
 
-  .error-title {
-    color: var(--color-error);
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-medium);
-  }
+.error-title {
+  color: var(--chips-color-error, #ef4444);
+  font-size: var(--chips-font-size-lg, 18px);
+  font-weight: var(--chips-font-weight-medium, 500);
+}
 
-  .error-message {
-    color: var(--color-text-secondary);
-    text-align: center;
-    max-width: 400px;
-  }
+.error-message {
+  color: var(--chips-color-text-secondary, #666666);
+  text-align: center;
+  max-width: 400px;
+}
 
-  .retry-button {
-    margin-top: var(--spacing-md);
-    padding: var(--spacing-sm) var(--spacing-lg);
-    background-color: var(--color-primary);
-    color: var(--color-text-on-primary);
-    border-radius: var(--radius-md);
-    font-weight: var(--font-weight-medium);
-    transition: background-color var(--transition-fast);
-  }
+.retry-button {
+  margin-top: var(--chips-spacing-md, 16px);
+  padding: var(--chips-spacing-sm, 8px) var(--chips-spacing-lg, 24px);
+  background-color: var(--chips-color-primary, #3b82f6);
+  color: var(--chips-color-text-on-primary, #ffffff);
+  border: none;
+  border-radius: var(--chips-radius-md, 6px);
+  font-weight: var(--chips-font-weight-medium, 500);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
 
-  .retry-button:hover {
-    background-color: var(--color-primary-hover);
-  }
+.retry-button:hover {
+  background-color: var(--chips-color-primary-hover, #2563eb);
+}
 
-  /* 编辑器容器 */
-  .editor-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  /* 欢迎信息 */
-  .welcome-message {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-sm);
-    text-align: center;
-  }
-
-  .welcome-message h1 {
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-bold);
-    color: var(--color-text-primary);
-  }
-
-  .welcome-message p {
-    color: var(--color-text-secondary);
-  }
-
-  .welcome-message .version {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-disabled);
-  }
+/* 未知布局回退 */
+.unknown-layout {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--chips-color-text-secondary, #666666);
+}
 </style>
