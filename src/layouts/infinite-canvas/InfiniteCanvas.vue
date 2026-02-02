@@ -14,12 +14,12 @@ import { useCanvasControls } from './use-canvas';
 import { useGlobalDragCreate, DragPreview } from '@/components/card-box-library';
 import type { DragData } from '@/components/card-box-library';
 
-const uiStore = useUIStore();
-
 const emit = defineEmits<{
   /** 拖放创建卡片/箱子 */
   dropCreate: [data: DragData, worldPosition: { x: number; y: number }];
 }>();
+
+const uiStore = useUIStore();
 
 /** 画布容器引用 */
 const canvasRef = ref<HTMLElement | null>(null);

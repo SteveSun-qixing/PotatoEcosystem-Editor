@@ -208,8 +208,8 @@ watch(() => props.maxItems, () => {
       <button
         class="history-btn"
         :disabled="!canUndo || isLoading"
-        @click="handleUndo"
         title="撤销 (Ctrl+Z)"
+        @click="handleUndo"
       >
         <span class="history-btn-icon">↶</span>
         <span v-if="!compact" class="history-btn-text">撤销</span>
@@ -218,8 +218,8 @@ watch(() => props.maxItems, () => {
       <button
         class="history-btn"
         :disabled="!canRedo || isLoading"
-        @click="handleRedo"
         title="重做 (Ctrl+Shift+Z)"
+        @click="handleRedo"
       >
         <span class="history-btn-icon">↷</span>
         <span v-if="!compact" class="history-btn-text">重做</span>
@@ -230,15 +230,15 @@ watch(() => props.maxItems, () => {
       <button
         class="history-btn history-btn-clear"
         :disabled="displayHistory.length === 0"
-        @click="handleClear"
         title="清空历史"
+        @click="handleClear"
       >
         <span class="history-btn-icon">🗑</span>
       </button>
     </div>
     
     <!-- 历史列表 -->
-    <div class="history-list" v-if="displayHistory.length > 0">
+    <div v-if="displayHistory.length > 0" class="history-list">
       <div
         v-for="(item, index) in displayHistory"
         :key="item.id"

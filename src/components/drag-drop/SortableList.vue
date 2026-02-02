@@ -303,7 +303,7 @@ watch(isSorting, (newVal, oldVal) => {
       @dragstart="(e) => handleDragStart(e, item, index)"
       @dragend="handleDragEnd"
     >
-      <slot :item="item" :index="index" :isDragging="localDragging && localDragIndex === index">
+      <slot :item="item" :index="index" :is-dragging="localDragging && localDragIndex === index">
         {{ item.id }}
       </slot>
     </div>

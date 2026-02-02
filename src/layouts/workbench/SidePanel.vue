@@ -254,10 +254,10 @@ defineExpose({
     <div
       v-if="!isExpanded"
       class="side-panel__collapsed-trigger"
-      @click="expand"
       role="button"
       tabindex="0"
       :aria-label="'展开面板'"
+      @click="expand"
       @keydown.enter="expand"
       @keydown.space.prevent="expand"
     >

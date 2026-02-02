@@ -197,8 +197,8 @@ defineExpose({
       <template v-if="hasTabs">
         <div
           v-for="tab in tabs"
-          :key="tab.id"
           v-show="activeTab === tab.id"
+          :key="tab.id"
           class="main-area__panel"
           role="tabpanel"
           :aria-hidden="activeTab !== tab.id"
