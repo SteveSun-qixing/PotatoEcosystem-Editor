@@ -50,3 +50,136 @@ export {
   useWindowManager,
   resetWindowManager,
 } from './window-manager';
+
+// ==================== 文件服务 ====================
+export {
+  FileService,
+  getFileService,
+  resetFileService,
+  getFileType,
+  isValidFileName,
+} from './file-service';
+
+export type {
+  FileType,
+  FileInfo,
+  CreateCardOptions,
+  CreateBoxOptions,
+  CreateFolderOptions,
+  FileOperationResult,
+  ClipboardOperation,
+  ClipboardData,
+} from './file-service';
+
+// ==================== 工作区服务 ====================
+export {
+  createWorkspaceService,
+  useWorkspaceService,
+  resetWorkspaceService,
+} from './workspace-service';
+
+export type {
+  WorkspaceFile,
+  WorkspaceState,
+  WorkspaceService,
+} from './workspace-service';
+
+// ==================== 卡片服务 ====================
+export {
+  createCardService,
+  useCardService,
+  resetCardService,
+} from './card-service';
+
+export type {
+  BasicCardData,
+  CardMetadata as CardServiceMetadata,
+  CardStructure,
+  CompositeCard,
+  CardService,
+} from './card-service';
+
+// ==================== 命令管理 ====================
+export {
+  CommandManager,
+  useCommandManager,
+  resetCommandManager,
+} from './command-manager';
+
+export type {
+  Command,
+  CommandHistory,
+  CommandManagerConfig,
+  CommandManagerEvents,
+  CommandManagerEventCallback,
+} from './command-manager';
+
+// ==================== 命令 ====================
+export {
+  // 卡片命令
+  AddBaseCardCommand,
+  RemoveBaseCardCommand,
+  MoveBaseCardCommand,
+  UpdateBaseCardConfigCommand,
+  BatchCardCommand,
+  // 窗口命令
+  CreateWindowCommand,
+  CloseWindowCommand,
+  MoveWindowCommand,
+  ResizeWindowCommand,
+  SetWindowStateCommand,
+  BatchWindowCommand,
+} from './commands';
+
+// ==================== 拖放管理 ====================
+export {
+  DragDropManager,
+  useDragDropManager,
+  resetDragDropManager,
+  useFileDrop,
+  useCardSort,
+  useCardNest,
+  detectFileType,
+  detectFileTypes,
+} from './drag-drop-manager';
+
+export type {
+  DragSourceType,
+  DropTargetType,
+  DropEffect,
+  FileDropType,
+  DragSourceConfig,
+  DropTargetConfig,
+  DragSource,
+  DropTarget,
+  Position,
+  InsertPosition,
+  DragDropState,
+  FileDragData,
+  BaseCardDragData,
+  CardNestDragData,
+  UseFileDropReturn,
+  UseCardSortReturn,
+  UseCardNestReturn,
+} from './drag-drop-manager';
+
+// ==================== 卡片初始化器 ====================
+export {
+  createCardInitializer,
+  useCardInitializer,
+  resetCardInitializer,
+  getCardInitializerOptions,
+} from './card-initializer';
+
+export type {
+  BasicCardConfig,
+  CardMetadataYaml,
+  StructureEntry,
+  ManifestResource,
+  CardManifest,
+  CardStructureYaml,
+  BasicCardYaml,
+  CardInitOptions,
+  CardInitResult,
+  CardInitializer,
+} from './card-initializer';

@@ -5,7 +5,7 @@
  * @description 提供卡片窗口的菜单栏功能，包括标题编辑、模式切换等
  */
 
-import { ref, nextTick } from 'vue';
+import { ref, nextTick, onMounted, onUnmounted } from 'vue';
 
 interface Props {
   /** 窗口标题 */
@@ -42,6 +42,7 @@ const emit = defineEmits<{
 const isEditingTitle = ref(false);
 const editingTitle = ref('');
 const titleInputRef = ref<HTMLInputElement | null>(null);
+const menuRef = ref<HTMLElement | null>(null);
 
 /**
  * 开始编辑标题
@@ -60,6 +61,8 @@ async function startEditTitle(currentTitle: string): Promise<void> {
  * 保存标题
  */
 function saveTitle(): void {
+  if (!isEditingTitle.value) return;
+  
   const trimmedTitle = editingTitle.value.trim();
   if (trimmedTitle && trimmedTitle !== '') {
     emit('update:title', trimmedTitle);
@@ -86,6 +89,44 @@ function handleKeydown(e: KeyboardEvent): void {
     cancelEditTitle();
   }
 }
+
+/**
+ * 处理全局点击事件
+ * 当点击输入框外部时，保存并关闭编辑
+ */
+function handleGlobalClick(e: MouseEvent): void {
+  if (!isEditingTitle.value) return;
+  
+  const target = e.target as HTMLElement;
+  // 如果点击的不是输入框本身，则保存并关闭
+  if (titleInputRef.value && !titleInputRef.value.contains(target)) {
+    saveTitle();
+  }
+}
+
+/**
+ * 处理全局 mousedown 事件
+ * 在 mousedown 阶段就检测，确保 blur 之前处理
+ */
+function handleGlobalMousedown(e: MouseEvent): void {
+  if (!isEditingTitle.value) return;
+  
+  const target = e.target as HTMLElement;
+  // 如果点击的不是输入框本身，则保存并关闭
+  if (titleInputRef.value && !titleInputRef.value.contains(target)) {
+    saveTitle();
+  }
+}
+
+// 挂载时添加全局事件监听
+onMounted(() => {
+  document.addEventListener('mousedown', handleGlobalMousedown, true);
+});
+
+// 卸载时移除事件监听
+onUnmounted(() => {
+  document.removeEventListener('mousedown', handleGlobalMousedown, true);
+});
 
 /**
  * 切换编辑模式

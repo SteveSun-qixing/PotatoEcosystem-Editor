@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * 基础窗口组件
+ * 工具窗口基础组件
  * @module components/window/BaseWindow
- * @description 提供可拖拽、可缩放的基础窗口功能
+ * @description 提供工具窗口的基础功能（固定大小，收起时只显示标题栏）
  */
 
 import { ref, computed, onUnmounted } from 'vue';
@@ -54,7 +54,9 @@ const resizeStart = ref({ x: 0, y: 0 });
 const initialSize = ref({ width: 0, height: 0 });
 
 /**
- * 计算窗口样式
+ * 计算窗口样式（工具窗口）
+ * - normal: 固定大小
+ * - collapsed: 只显示标题栏（高度自动）
  */
 const windowStyle = computed(() => ({
   transform: `translate(${props.config.position.x}px, ${props.config.position.y}px)`,
@@ -253,7 +255,7 @@ defineExpose({
       </div>
     </div>
 
-    <!-- 内容区 -->
+    <!-- 内容区（收起时隐藏） -->
     <div
       v-show="config.state !== 'collapsed'"
       class="base-window__content"
@@ -293,10 +295,6 @@ defineExpose({
 }
 
 .base-window--minimized {
-  display: none;
-}
-
-.base-window--collapsed .base-window__content {
   display: none;
 }
 
@@ -376,8 +374,10 @@ defineExpose({
 
 .base-window__content {
   flex: 1;
-  overflow: auto;
   min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .base-window__resize-handle {
