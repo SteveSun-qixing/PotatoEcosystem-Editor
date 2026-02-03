@@ -2,7 +2,7 @@
 /**
  * 程序坞项组件
  * @module components/dock/DockItem
- * @description 单个工具图标，支持悬停提示和点击恢复
+ * @description 单个工具图标，支持悬停提示和点击聚焦/恢复
  */
 
 import { computed } from 'vue';
@@ -14,12 +14,16 @@ interface Props {
   icon?: string;
   /** 工具标题 */
   title: string;
+  /** 是否已最小化 */
+  minimized?: boolean;
 }
 
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+  minimized: false,
+});
 
 const emit = defineEmits<{
-  /** 点击恢复窗口 */
+  /** 点击恢复/聚焦窗口 */
   restore: [toolId: string];
 }>();
 
@@ -36,7 +40,7 @@ function handleClick(): void {
 
 <template>
   <div
-    class="dock-item"
+    :class="['dock-item', { 'dock-item--minimized': minimized }]"
     :title="title"
     @click="handleClick"
   >
@@ -48,21 +52,30 @@ function handleClick(): void {
 <style scoped>
 .dock-item {
   position: relative;
-  width: 48px;
-  height: 48px;
+  width: 52px;
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--chips-radius-md, 6px);
+  border-radius: var(--chips-radius-md, 8px);
   background: var(--chips-color-surface-variant, #f5f5f5);
   cursor: pointer;
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-    background-color 0.2s;
+    background-color 0.2s, opacity 0.2s;
   user-select: none;
 }
 
+/* 最小化状态 - 半透明 */
+.dock-item--minimized {
+  opacity: 0.5;
+}
+
+.dock-item--minimized:hover {
+  opacity: 1;
+}
+
 .dock-item:hover {
-  transform: scale(1.15) translateY(-4px);
+  transform: scale(1.12) translateY(-4px);
   background: var(--chips-color-primary-light, rgba(59, 130, 246, 0.1));
 }
 
@@ -71,7 +84,7 @@ function handleClick(): void {
 }
 
 .dock-item__icon {
-  font-size: 24px;
+  font-size: 26px;
   line-height: 1;
   transition: transform 0.2s;
 }
@@ -82,18 +95,19 @@ function handleClick(): void {
 
 .dock-item__tooltip {
   position: absolute;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%) translateY(4px);
-  padding: 4px 8px;
+  padding: 6px 10px;
   background: var(--chips-color-surface-elevated, rgba(0, 0, 0, 0.8));
   color: var(--chips-color-text-on-dark, #ffffff);
   border-radius: var(--chips-radius-sm, 4px);
-  font-size: var(--chips-font-size-xs, 12px);
+  font-size: var(--chips-font-size-sm, 13px);
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s, transform 0.2s;
+  z-index: 10;
 }
 
 .dock-item:hover .dock-item__tooltip {

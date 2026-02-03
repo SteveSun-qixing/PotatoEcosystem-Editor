@@ -2,13 +2,17 @@
 /**
  * 卡箱库主组件
  * @module components/card-box-library/CardBoxLibrary
- * @description 显示所有可用的卡片类型和箱子布局类型，支持拖放创建
+ * @description 显示已安装的基础卡片插件和箱子布局插件，支持拖放创建
+ * 
+ * 设计说明：
+ * - 卡箱库中的卡片类型和布局类型来自已安装的插件
+ * - 插件通过内核的插件管理接口动态加载
+ * - 启动时查询内核获取已安装的插件列表
  */
 
-import { ref, computed, watch } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import CardTypeGrid from './CardTypeGrid.vue';
 import LayoutTypeGrid from './LayoutTypeGrid.vue';
-import { searchCardTypes, searchLayoutTypes, cardTypes, layoutTypes } from './data';
 import { useGlobalDragCreate } from './use-drag-create';
 import type { DragData, CardTypeDefinition, LayoutTypeDefinition } from './types';
 
@@ -23,55 +27,91 @@ const emit = defineEmits<{
 /** 当前激活的标签页 */
 const activeTab = ref<TabType>('cards');
 
-/** 搜索关键词 */
-const searchQuery = ref('');
-
 /** 全局拖放创建实例 */
 const dragCreate = useGlobalDragCreate();
 
-/** 过滤后的卡片类型 */
-const filteredCardTypes = computed<CardTypeDefinition[]>(() => {
-  return searchCardTypes(searchQuery.value);
-});
+/** 加载状态 */
+const isLoading = ref(true);
 
-/** 过滤后的布局类型 */
-const filteredLayoutTypes = computed<LayoutTypeDefinition[]>(() => {
-  return searchLayoutTypes(searchQuery.value);
-});
+/** 错误信息 */
+const errorMessage = ref<string | null>(null);
 
-/** 是否有搜索结果 */
-const hasSearchResults = computed(() => {
-  if (!searchQuery.value.trim()) return true;
+/** 已安装的基础卡片插件（从内核动态加载） */
+const installedCardTypes = ref<CardTypeDefinition[]>([]);
 
-  if (activeTab.value === 'cards') {
-    return filteredCardTypes.value.length > 0;
+/** 已安装的布局插件（从内核动态加载） */
+const installedLayoutTypes = ref<LayoutTypeDefinition[]>([]);
+
+/**
+ * 从内核加载已安装的插件
+ * TODO: 实际实现需要通过 SDK 连接内核的插件管理接口
+ */
+async function loadInstalledPlugins(): Promise<void> {
+  isLoading.value = true;
+  errorMessage.value = null;
+  
+  try {
+    // TODO: 通过 SDK 调用内核接口
+    // const sdk = inject('sdk');
+    // const cardPlugins = await sdk.plugins.list({ type: 'base-card' });
+    // const layoutPlugins = await sdk.plugins.list({ type: 'layout' });
+    
+    // 模拟从内核获取已安装的插件
+    // 当前只有富文本基础卡片插件已开发
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // 只显示真正已安装的插件
+    // 富文本插件信息应该从插件的 manifest.yaml 读取
+    installedCardTypes.value = [
+      {
+        id: 'rich-text',
+        name: '富文本',
+        icon: '📄',
+        description: '支持格式化的富文本内容',
+        category: 'text',
+        keywords: ['文本', '富文本', 'rich', 'text', '编辑'],
+        // 插件来源信息
+        pluginId: 'rich-text-basic-card-plugin',
+        pluginVersion: '1.0.0',
+      },
+    ];
+    
+    // 暂时没有已安装的布局插件
+    installedLayoutTypes.value = [];
+    
+  } catch (error) {
+    console.error('[CardBoxLibrary] 加载插件失败:', error);
+    errorMessage.value = error instanceof Error ? error.message : '加载插件失败';
+  } finally {
+    isLoading.value = false;
   }
-  return filteredLayoutTypes.value.length > 0;
-});
+}
 
-/** 是否显示分类（搜索时不显示） */
-const showCategories = computed(() => {
-  return !searchQuery.value.trim();
+/** 卡片类型列表 */
+const cardTypes = computed<CardTypeDefinition[]>(() => installedCardTypes.value);
+
+/** 布局类型列表 */
+const layoutTypes = computed<LayoutTypeDefinition[]>(() => installedLayoutTypes.value);
+
+/** 是否有内容 */
+const hasContent = computed(() => {
+  if (activeTab.value === 'cards') {
+    return cardTypes.value.length > 0;
+  }
+  return layoutTypes.value.length > 0;
 });
 
 /** 当前显示的卡片数量 */
-const currentCardCount = computed(() => filteredCardTypes.value.length);
+const currentCardCount = computed(() => installedCardTypes.value.length);
 
 /** 当前显示的布局数量 */
-const currentLayoutCount = computed(() => filteredLayoutTypes.value.length);
+const currentLayoutCount = computed(() => installedLayoutTypes.value.length);
 
 /**
  * 切换标签页
  */
 function switchTab(tab: TabType): void {
   activeTab.value = tab;
-}
-
-/**
- * 清空搜索
- */
-function clearSearch(): void {
-  searchQuery.value = '';
 }
 
 /**
@@ -82,34 +122,21 @@ function handleDragStart(data: DragData, event: DragEvent): void {
   emit('dragStart', data, event);
 }
 
-// 当切换标签页时，如果搜索结果为空，清空搜索
-watch(activeTab, () => {
-  if (!hasSearchResults.value) {
-    clearSearch();
-  }
+/**
+ * 刷新插件列表
+ */
+function refreshPlugins(): void {
+  loadInstalledPlugins();
+}
+
+// 组件挂载时加载插件
+onMounted(() => {
+  loadInstalledPlugins();
 });
 </script>
 
 <template>
   <div class="card-box-library">
-    <!-- 搜索框 -->
-    <div class="card-box-library__search">
-      <span class="card-box-library__search-icon">🔍</span>
-      <input
-        v-model="searchQuery"
-        type="text"
-        class="card-box-library__search-input"
-        :placeholder="activeTab === 'cards' ? '搜索卡片类型...' : '搜索布局类型...'"
-      />
-      <button
-        v-if="searchQuery"
-        class="card-box-library__search-clear"
-        @click="clearSearch"
-      >
-        ✕
-      </button>
-    </div>
-
     <!-- 标签页 -->
     <div class="card-box-library__tabs">
       <button
@@ -134,36 +161,54 @@ watch(activeTab, () => {
 
     <!-- 内容区域 -->
     <div class="card-box-library__content">
-      <!-- 卡片类型网格 -->
-      <CardTypeGrid
-        v-if="activeTab === 'cards'"
-        :types="filteredCardTypes"
-        :show-categories="showCategories"
-        @drag-start="handleDragStart"
-      />
+      <!-- 加载状态 -->
+      <div v-if="isLoading" class="card-box-library__loading">
+        <span class="card-box-library__loading-spinner">⏳</span>
+        <span class="card-box-library__loading-text">正在加载已安装的插件...</span>
+      </div>
 
-      <!-- 布局类型网格 -->
-      <LayoutTypeGrid
-        v-if="activeTab === 'boxes'"
-        :types="filteredLayoutTypes"
-        :show-categories="showCategories"
-        @drag-start="handleDragStart"
-      />
-
-      <!-- 无搜索结果提示 -->
-      <div v-if="!hasSearchResults" class="card-box-library__empty">
-        <span class="card-box-library__empty-icon">🔍</span>
-        <span class="card-box-library__empty-text">未找到匹配的{{ activeTab === 'cards' ? '卡片' : '布局' }}类型</span>
-        <button class="card-box-library__empty-action" @click="clearSearch">
-          清空搜索
+      <!-- 错误状态 -->
+      <div v-else-if="errorMessage" class="card-box-library__error">
+        <span class="card-box-library__error-icon">⚠️</span>
+        <span class="card-box-library__error-text">{{ errorMessage }}</span>
+        <button class="card-box-library__error-action" @click="refreshPlugins">
+          重试
         </button>
       </div>
-    </div>
 
-    <!-- 提示信息 -->
-    <div class="card-box-library__hint">
-      <span class="card-box-library__hint-icon">💡</span>
-      <span class="card-box-library__hint-text">拖拽到画布空白区域创建新{{ activeTab === 'cards' ? '卡片' : '箱子' }}</span>
+      <!-- 卡片类型网格 -->
+      <template v-else-if="activeTab === 'cards'">
+        <CardTypeGrid
+          v-if="hasContent"
+          :types="cardTypes"
+          :show-categories="false"
+          @drag-start="handleDragStart"
+        />
+        
+        <!-- 无已安装的卡片插件 -->
+        <div v-else class="card-box-library__empty">
+          <span class="card-box-library__empty-icon">📭</span>
+          <span class="card-box-library__empty-text">暂无已安装的基础卡片插件</span>
+          <span class="card-box-library__empty-hint">请通过应用市场安装基础卡片插件</span>
+        </div>
+      </template>
+
+      <!-- 布局类型网格 -->
+      <template v-else-if="activeTab === 'boxes'">
+        <LayoutTypeGrid
+          v-if="hasContent"
+          :types="layoutTypes"
+          :show-categories="false"
+          @drag-start="handleDragStart"
+        />
+        
+        <!-- 无已安装的布局插件 -->
+        <div v-else class="card-box-library__empty">
+          <span class="card-box-library__empty-icon">📭</span>
+          <span class="card-box-library__empty-text">暂无已安装的布局插件</span>
+          <span class="card-box-library__empty-hint">请通过应用市场安装布局插件</span>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -174,55 +219,6 @@ watch(activeTab, () => {
   flex-direction: column;
   height: 100%;
   min-height: 300px;
-}
-
-/* 搜索框 */
-.card-box-library__search {
-  display: flex;
-  align-items: center;
-  gap: var(--chips-spacing-xs, 4px);
-  padding: var(--chips-spacing-sm, 8px);
-  background-color: var(--chips-color-bg-secondary, #f5f5f5);
-  border-radius: var(--chips-border-radius-base, 8px);
-  margin-bottom: var(--chips-spacing-sm, 8px);
-}
-
-.card-box-library__search-icon {
-  font-size: var(--chips-font-size-sm, 14px);
-  opacity: 0.6;
-}
-
-.card-box-library__search-input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  font-size: var(--chips-font-size-sm, 14px);
-  color: var(--chips-color-text-primary, #1a1a1a);
-  outline: none;
-}
-
-.card-box-library__search-input::placeholder {
-  color: var(--chips-color-text-tertiary, #999);
-}
-
-.card-box-library__search-clear {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: none;
-  background: var(--chips-color-bg-hover, #e8e8e8);
-  border-radius: 50%;
-  font-size: var(--chips-font-size-xs, 12px);
-  color: var(--chips-color-text-tertiary, #999);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.card-box-library__search-clear:hover {
-  background: var(--chips-color-bg-active, #ddd);
-  color: var(--chips-color-text-secondary, #666);
 }
 
 /* 标签页 */
@@ -289,22 +285,59 @@ watch(activeTab, () => {
   padding-right: var(--chips-spacing-xs, 4px);
 }
 
-/* 滚动条样式 */
-.card-box-library__content::-webkit-scrollbar {
-  width: 6px;
+/* 加载状态 */
+.card-box-library__loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--chips-spacing-sm, 8px);
+  padding: var(--chips-spacing-xl, 32px);
+  color: var(--chips-color-text-tertiary, #999);
 }
 
-.card-box-library__content::-webkit-scrollbar-track {
+.card-box-library__loading-spinner {
+  font-size: var(--chips-font-size-xxl, 32px);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.card-box-library__loading-text {
+  font-size: var(--chips-font-size-sm, 14px);
+}
+
+/* 错误状态 */
+.card-box-library__error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--chips-spacing-sm, 8px);
+  padding: var(--chips-spacing-xl, 32px);
+  color: var(--chips-color-error, #ff4d4f);
+}
+
+.card-box-library__error-icon {
+  font-size: var(--chips-font-size-xxl, 32px);
+}
+
+.card-box-library__error-text {
+  font-size: var(--chips-font-size-sm, 14px);
+  text-align: center;
+}
+
+.card-box-library__error-action {
+  padding: var(--chips-spacing-xs, 4px) var(--chips-spacing-md, 12px);
+  border: 1px solid var(--chips-color-error, #ff4d4f);
   background: transparent;
-}
-
-.card-box-library__content::-webkit-scrollbar-thumb {
-  background-color: var(--chips-color-border, #e0e0e0);
-  border-radius: 3px;
-}
-
-.card-box-library__content::-webkit-scrollbar-thumb:hover {
-  background-color: var(--chips-color-text-tertiary, #999);
+  border-radius: var(--chips-border-radius-sm, 6px);
+  font-size: var(--chips-font-size-xs, 12px);
+  color: var(--chips-color-error, #ff4d4f);
+  cursor: pointer;
 }
 
 /* 空状态 */
@@ -325,42 +358,11 @@ watch(activeTab, () => {
 
 .card-box-library__empty-text {
   font-size: var(--chips-font-size-sm, 14px);
+  text-align: center;
 }
 
-.card-box-library__empty-action {
-  padding: var(--chips-spacing-xs, 4px) var(--chips-spacing-md, 12px);
-  border: 1px solid var(--chips-color-border, #e0e0e0);
-  background: transparent;
-  border-radius: var(--chips-border-radius-sm, 6px);
+.card-box-library__empty-hint {
   font-size: var(--chips-font-size-xs, 12px);
-  color: var(--chips-color-text-secondary, #666);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.card-box-library__empty-action:hover {
-  background-color: var(--chips-color-bg-secondary, #f5f5f5);
-  border-color: var(--chips-color-text-tertiary, #999);
-}
-
-/* 提示信息 */
-.card-box-library__hint {
-  display: flex;
-  align-items: center;
-  gap: var(--chips-spacing-xs, 4px);
-  padding: var(--chips-spacing-sm, 8px);
-  margin-top: var(--chips-spacing-sm, 8px);
-  background-color: var(--chips-color-info-light, #e6f7ff);
-  border-radius: var(--chips-border-radius-sm, 6px);
-  font-size: var(--chips-font-size-xs, 12px);
-  color: var(--chips-color-info, #1890ff);
-}
-
-.card-box-library__hint-icon {
-  font-size: var(--chips-font-size-sm, 14px);
-}
-
-.card-box-library__hint-text {
-  flex: 1;
+  color: var(--chips-color-text-quaternary, #bbb);
 }
 </style>

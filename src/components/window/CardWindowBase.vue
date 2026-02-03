@@ -1,16 +1,27 @@
 <script setup lang="ts">
 /**
- * 工具窗口基础组件
- * @module components/window/BaseWindow
- * @description 提供工具窗口的基础功能（固定大小，收起时只显示标题栏）
+ * 卡片窗口基础组件
+ * @module components/window/CardWindowBase
+ * @description 提供复合卡片窗口的基础功能
+ * 
+ * 与工具窗口的区别：
+ * - 展开状态：自适应内容高度（无限长）
+ * - 收起状态：固定 9:16 比例，内容可滚动
  */
 
-import { ref, computed, onUnmounted } from 'vue';
-import type { WindowConfig, WindowPosition, WindowSize } from '@/types';
+import { ref, computed, onUnmounted, inject, type Ref } from 'vue';
+import type { CardWindowConfig, WindowPosition, WindowSize } from '@/types';
+
+// 从 InfiniteCanvas 注入画布上下文（获取缩放比例）
+const canvasContext = inject<{
+  zoom: Ref<number>;
+  panX: Ref<number>;
+  panY: Ref<number>;
+}>('canvas', null);
 
 interface Props {
   /** 窗口配置 */
-  config: WindowConfig;
+  config: CardWindowConfig;
   /** 是否可拖拽 */
   draggable?: boolean;
   /** 是否可缩放 */
@@ -54,27 +65,35 @@ const resizeStart = ref({ x: 0, y: 0 });
 const initialSize = ref({ width: 0, height: 0 });
 
 /**
- * 计算窗口样式（工具窗口）
- * - normal: 固定大小
- * - collapsed: 只显示标题栏（高度自动）
+ * 计算窗口样式（复合卡片窗口）
+ * - normal（展开）: 自适应内容高度
+ * - collapsed（收起）: 固定 9:16 竖直比例
  */
-const windowStyle = computed(() => ({
-  transform: `translate(${props.config.position.x}px, ${props.config.position.y}px)`,
-  width: `${props.config.size.width}px`,
-  height: props.config.state === 'collapsed' ? 'auto' : `${props.config.size.height}px`,
-  zIndex: props.config.zIndex,
-}));
+const windowStyle = computed(() => {
+  const width = props.config.size.width;
+  // 收起状态使用 9:16 比例计算高度（竖直卡片）
+  const collapsedHeight = Math.round(width * 16 / 9);
+  
+  return {
+    transform: `translate(${props.config.position.x}px, ${props.config.position.y}px)`,
+    width: `${width}px`,
+    // 展开状态自适应内容，收起状态固定 9:16 比例
+    height: props.config.state === 'collapsed' ? `${collapsedHeight}px` : 'auto',
+    zIndex: props.config.zIndex,
+  };
+});
 
 /**
  * 窗口类名计算
  */
 const windowClass = computed(() => ({
-  'base-window': true,
-  'base-window--dragging': isDragging.value,
-  'base-window--resizing': isResizing.value,
-  'base-window--minimized': props.config.state === 'minimized',
-  'base-window--collapsed': props.config.state === 'collapsed',
-  'base-window--focused': true, // TODO: 从 store 获取焦点状态
+  'card-window-base': true,
+  'card-window-base--dragging': isDragging.value,
+  'card-window-base--resizing': isResizing.value,
+  'card-window-base--minimized': props.config.state === 'minimized',
+  'card-window-base--collapsed': props.config.state === 'collapsed',
+  'card-window-base--normal': props.config.state === 'normal',
+  'card-window-base--focused': true,
 }));
 
 /**
@@ -82,7 +101,7 @@ const windowClass = computed(() => ({
  */
 function handleDragStart(e: MouseEvent): void {
   // 忽略来自按钮的点击
-  if ((e.target as HTMLElement).closest('.base-window__action')) {
+  if ((e.target as HTMLElement).closest('.card-window-base__action')) {
     return;
   }
   
@@ -95,18 +114,22 @@ function handleDragStart(e: MouseEvent): void {
   document.addEventListener('mousemove', handleDragMove);
   document.addEventListener('mouseup', handleDragEnd);
   
-  // 防止文本选择
   e.preventDefault();
 }
 
 /**
  * 拖拽移动
+ * 需要考虑缩放比例：屏幕距离 / 缩放比例 = 世界距离
  */
 function handleDragMove(e: MouseEvent): void {
   if (!isDragging.value) return;
 
-  const deltaX = e.clientX - dragStart.value.x;
-  const deltaY = e.clientY - dragStart.value.y;
+  // 获取当前缩放比例（默认为 1）
+  const zoom = canvasContext?.zoom.value ?? 1;
+
+  // 将屏幕距离转换为世界距离
+  const deltaX = (e.clientX - dragStart.value.x) / zoom;
+  const deltaY = (e.clientY - dragStart.value.y) / zoom;
 
   emit('update:position', {
     x: initialPosition.value.x + deltaX,
@@ -137,22 +160,26 @@ function handleResizeStart(e: MouseEvent): void {
   document.addEventListener('mousemove', handleResizeMove);
   document.addEventListener('mouseup', handleResizeEnd);
   
-  // 防止文本选择
   e.preventDefault();
 }
 
 /**
  * 缩放移动
+ * 需要考虑缩放比例：屏幕距离 / 缩放比例 = 世界距离
  */
 function handleResizeMove(e: MouseEvent): void {
   if (!isResizing.value) return;
 
-  const deltaX = e.clientX - resizeStart.value.x;
-  const deltaY = e.clientY - resizeStart.value.y;
+  // 获取当前缩放比例（默认为 1）
+  const zoom = canvasContext?.zoom.value ?? 1;
 
+  // 将屏幕距离转换为世界距离
+  const deltaX = (e.clientX - resizeStart.value.x) / zoom;
+
+  // 卡片窗口只调整宽度
   emit('update:size', {
     width: Math.max(props.minWidth, initialSize.value.width + deltaX),
-    height: Math.max(props.minHeight, initialSize.value.height + deltaY),
+    height: props.config.size.height, // 保持原高度（实际由内容决定）
   });
 }
 
@@ -216,64 +243,61 @@ defineExpose({
   >
     <!-- 标题栏 -->
     <div
-      class="base-window__header"
+      class="card-window-base__header"
       @mousedown="handleDragStart"
     >
       <slot name="header">
-        <span class="base-window__title">{{ config.title }}</span>
+        <span class="card-window-base__title">{{ config.title }}</span>
       </slot>
 
-      <div class="base-window__actions">
+      <div class="card-window-base__actions">
         <slot name="actions">
           <button
             v-if="config.minimizable !== false"
-            class="base-window__action base-window__action--minimize"
+            class="card-window-base__action card-window-base__action--minimize"
             type="button"
             aria-label="最小化"
             @click.stop="handleMinimize"
           >
-            <span class="base-window__action-icon">−</span>
+            <span class="card-window-base__action-icon">−</span>
           </button>
           <button
-            class="base-window__action base-window__action--collapse"
+            class="card-window-base__action card-window-base__action--collapse"
             type="button"
             :aria-label="config.state === 'collapsed' ? '展开' : '收起'"
             @click.stop="handleCollapse"
           >
-            <span class="base-window__action-icon">{{ config.state === 'collapsed' ? '▽' : '△' }}</span>
+            <span class="card-window-base__action-icon">{{ config.state === 'collapsed' ? '▽' : '△' }}</span>
           </button>
           <button
             v-if="config.closable !== false"
-            class="base-window__action base-window__action--close"
+            class="card-window-base__action card-window-base__action--close"
             type="button"
             aria-label="关闭"
             @click.stop="handleClose"
           >
-            <span class="base-window__action-icon">×</span>
+            <span class="card-window-base__action-icon">×</span>
           </button>
         </slot>
       </div>
     </div>
 
-    <!-- 内容区（收起时隐藏） -->
-    <div
-      v-show="config.state !== 'collapsed'"
-      class="base-window__content"
-    >
+    <!-- 内容区 -->
+    <div class="card-window-base__content">
       <slot></slot>
     </div>
 
-    <!-- 缩放手柄 -->
+    <!-- 缩放手柄（仅水平方向） -->
     <div
-      v-if="resizable && config.state === 'normal'"
-      class="base-window__resize-handle"
+      v-if="resizable"
+      class="card-window-base__resize-handle"
       @mousedown="handleResizeStart"
     ></div>
   </div>
 </template>
 
 <style scoped>
-.base-window {
+.card-window-base {
   position: absolute;
   background: var(--chips-color-surface, #ffffff);
   border-radius: var(--chips-radius-md, 8px);
@@ -284,25 +308,36 @@ defineExpose({
   transition: box-shadow var(--chips-transition-fast, 0.15s) ease;
 }
 
-.base-window--dragging {
+.card-window-base--dragging {
   cursor: grabbing;
   user-select: none;
   box-shadow: var(--chips-shadow-xl, 0 12px 32px rgba(0, 0, 0, 0.2));
 }
 
-.base-window--resizing {
+.card-window-base--resizing {
   user-select: none;
 }
 
-.base-window--minimized {
+.card-window-base--minimized {
   display: none;
 }
 
-.base-window--focused {
+/* 收起状态 - 内容区固定高度，可滚动 */
+.card-window-base--collapsed .card-window-base__content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* 展开状态 - 内容自适应高度 */
+.card-window-base--normal .card-window-base__content {
+  /* 自动高度 */
+}
+
+.card-window-base--focused {
   box-shadow: var(--chips-shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.15));
 }
 
-.base-window__header {
+.card-window-base__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -313,11 +348,11 @@ defineExpose({
   flex-shrink: 0;
 }
 
-.base-window--dragging .base-window__header {
+.card-window-base--dragging .card-window-base__header {
   cursor: grabbing;
 }
 
-.base-window__title {
+.card-window-base__title {
   font-size: var(--chips-font-size-sm, 14px);
   font-weight: var(--chips-font-weight-medium, 500);
   color: var(--chips-color-text-primary, #1a1a1a);
@@ -328,14 +363,14 @@ defineExpose({
   min-width: 0;
 }
 
-.base-window__actions {
+.card-window-base__actions {
   display: flex;
   gap: var(--chips-spacing-xs, 4px);
   margin-left: var(--chips-spacing-sm, 8px);
   flex-shrink: 0;
 }
 
-.base-window__action {
+.card-window-base__action {
   width: 24px;
   height: 24px;
   border: none;
@@ -350,46 +385,42 @@ defineExpose({
               color var(--chips-transition-fast, 0.15s) ease;
 }
 
-.base-window__action-icon {
+.card-window-base__action-icon {
   font-size: var(--chips-font-size-md, 16px);
   line-height: 1;
   color: var(--chips-color-text-secondary, #666666);
 }
 
-.base-window__action:hover {
+.card-window-base__action:hover {
   background: var(--chips-color-surface-hover, rgba(0, 0, 0, 0.05));
 }
 
-.base-window__action:hover .base-window__action-icon {
+.card-window-base__action:hover .card-window-base__action-icon {
   color: var(--chips-color-text-primary, #1a1a1a);
 }
 
-.base-window__action--close:hover {
+.card-window-base__action--close:hover {
   background: var(--chips-color-error, #ef4444);
 }
 
-.base-window__action--close:hover .base-window__action-icon {
+.card-window-base__action--close:hover .card-window-base__action-icon {
   color: var(--chips-color-on-error, #ffffff);
 }
 
-.base-window__content {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+.card-window-base__content {
+  /* 默认自动高度 */
 }
 
-.base-window__resize-handle {
+.card-window-base__resize-handle {
   position: absolute;
   bottom: 0;
   right: 0;
   width: 16px;
   height: 16px;
-  cursor: se-resize;
+  cursor: ew-resize;
 }
 
-.base-window__resize-handle::after {
+.card-window-base__resize-handle::after {
   content: '';
   position: absolute;
   bottom: 4px;
@@ -400,7 +431,7 @@ defineExpose({
   border-bottom: 2px solid var(--chips-color-border, #e0e0e0);
 }
 
-.base-window__resize-handle:hover::after {
+.card-window-base__resize-handle:hover::after {
   border-color: var(--chips-color-primary, #3b82f6);
 }
 </style>

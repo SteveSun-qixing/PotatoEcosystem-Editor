@@ -115,10 +115,18 @@ export function useCanvasControls(options: CanvasControlsOptions = {}): CanvasCo
   const zoomPercent = computed(() => Math.round(zoom.value * 100));
 
   /**
-   * 处理鼠标滚轮缩放
+   * 处理鼠标滚轮事件（在桌面空白区域）
+   * 
+   * 滚动行为设计：
+   * - 在桌面空白区域滚轮 = 以鼠标位置为中心缩放桌面
+   * - Ctrl/Command + 滚轮 = 强制缩放（在任何位置）
+   * 
    * @param e - 鼠标滚轮事件
    */
   function handleWheel(e: WheelEvent): void {
+    e.preventDefault();
+    
+    // 滚轮 = 缩放桌面
     const delta = e.deltaY > 0 ? -zoomStep : zoomStep;
     const newZoom = Math.max(minZoom, Math.min(maxZoom, zoom.value + delta));
 
@@ -200,38 +208,103 @@ export function useCanvasControls(options: CanvasControlsOptions = {}): CanvasCo
   }
 
   /**
+   * 获取所有卡片窗口的边界
+   * @returns 所有卡片组成的边界，如果没有卡片返回 null
+   */
+  function getAllCardsBounds(): ContentBounds | null {
+    const cardWindows = uiStore.cardWindows;
+    if (cardWindows.length === 0) return null;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    cardWindows.forEach((card) => {
+      const x = card.position.x;
+      const y = card.position.y;
+      const width = card.size.width;
+      const height = card.size.height || 500; // 默认高度
+
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + width);
+      maxY = Math.max(maxY, y + height);
+    });
+
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+    };
+  }
+
+  /**
    * 重置视图
+   * 将缩放比例重置为 100%，视觉中心移动到所有卡片中心
    */
   function resetView(): void {
     zoom.value = 1;
-    panX.value = 0;
-    panY.value = 0;
+
+    // 获取所有卡片的边界
+    const bounds = getAllCardsBounds();
+    if (bounds) {
+      // 计算卡片中心
+      const centerX = bounds.x + bounds.width / 2;
+      const centerY = bounds.y + bounds.height / 2;
+
+      // 计算视口中心
+      const viewportWidth = globalThis.innerWidth;
+      const viewportHeight = globalThis.innerHeight;
+
+      // 将卡片中心移动到视口中心
+      panX.value = viewportWidth / 2 - centerX * zoom.value;
+      panY.value = viewportHeight / 2 - centerY * zoom.value;
+    } else {
+      panX.value = 0;
+      panY.value = 0;
+    }
   }
 
   /**
    * 适应内容
-   * @param contentBounds - 内容边界
+   * 缩放到能看到所有卡片的比例，最小不低于 25%
+   * @param contentBounds - 内容边界（可选，不传则自动计算）
    */
   function fitToContent(contentBounds?: ContentBounds): void {
-    if (!contentBounds) {
-      resetView();
+    // 如果没有传入边界，自动计算所有卡片的边界
+    const bounds = contentBounds || getAllCardsBounds();
+    
+    if (!bounds) {
+      // 没有卡片，重置到默认位置
+      zoom.value = 1;
+      panX.value = 0;
+      panY.value = 0;
       return;
     }
 
     // 计算适应视口的缩放比例
     const viewportWidth = globalThis.innerWidth;
     const viewportHeight = globalThis.innerHeight;
-    const padding = 50;
+    const padding = 80; // 边距
 
-    const scaleX = (viewportWidth - padding * 2) / contentBounds.width;
-    const scaleY = (viewportHeight - padding * 2) / contentBounds.height;
-    const newZoom = Math.min(scaleX, scaleY, 1);
+    const scaleX = (viewportWidth - padding * 2) / bounds.width;
+    const scaleY = (viewportHeight - padding * 2) / bounds.height;
+    let newZoom = Math.min(scaleX, scaleY);
 
-    zoom.value = Math.max(minZoom, Math.min(maxZoom, newZoom));
+    // 限制缩放范围：最小 25%，最大 maxZoom
+    newZoom = Math.max(0.25, Math.min(maxZoom, newZoom));
 
-    // 居中内容
-    panX.value = (viewportWidth - contentBounds.width * zoom.value) / 2 - contentBounds.x * zoom.value;
-    panY.value = (viewportHeight - contentBounds.height * zoom.value) / 2 - contentBounds.y * zoom.value;
+    zoom.value = newZoom;
+
+    // 计算卡片中心
+    const centerX = bounds.x + bounds.width / 2;
+    const centerY = bounds.y + bounds.height / 2;
+
+    // 将卡片中心移动到视口中心
+    panX.value = viewportWidth / 2 - centerX * zoom.value;
+    panY.value = viewportHeight / 2 - centerY * zoom.value;
   }
 
   /**

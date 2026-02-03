@@ -71,6 +71,34 @@ export type {
   ClipboardData,
 } from './file-service';
 
+// ==================== 工作区服务 ====================
+export {
+  createWorkspaceService,
+  useWorkspaceService,
+  resetWorkspaceService,
+} from './workspace-service';
+
+export type {
+  WorkspaceFile,
+  WorkspaceState,
+  WorkspaceService,
+} from './workspace-service';
+
+// ==================== 卡片服务 ====================
+export {
+  createCardService,
+  useCardService,
+  resetCardService,
+} from './card-service';
+
+export type {
+  BasicCardData,
+  CardMetadata as CardServiceMetadata,
+  CardStructure,
+  CompositeCard,
+  CardService,
+} from './card-service';
+
 // ==================== 命令管理 ====================
 export {
   CommandManager,
@@ -134,3 +162,24 @@ export type {
   UseCardSortReturn,
   UseCardNestReturn,
 } from './drag-drop-manager';
+
+// ==================== 卡片初始化器 ====================
+export {
+  createCardInitializer,
+  useCardInitializer,
+  resetCardInitializer,
+  getCardInitializerOptions,
+} from './card-initializer';
+
+export type {
+  BasicCardConfig,
+  CardMetadataYaml,
+  StructureEntry,
+  ManifestResource,
+  CardManifest,
+  CardStructureYaml,
+  BasicCardYaml,
+  CardInitOptions,
+  CardInitResult,
+  CardInitializer,
+} from './card-initializer';

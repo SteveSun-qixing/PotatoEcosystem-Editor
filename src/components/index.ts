@@ -94,3 +94,26 @@ export type {
 
 // ==================== 历史面板组件 ====================
 export { HistoryPanel } from './history-panel';
+
+// ==================== 封面制作器组件 ====================
+export {
+  CoverMaker,
+  TemplateGrid,
+  TemplatePreview,
+  templates,
+  getTemplateById,
+  generateCoverHtml,
+  generateImageCoverHtml,
+  generateDefaultCoverHtml,
+} from './cover-maker';
+
+export type {
+  CoverCreationMode,
+  TemplateStyle,
+  CoverTemplate,
+  TemplateConfig,
+  CoverData,
+  CoverCreationResult,
+  CoverMakerProps,
+  CoverMakerEmits,
+} from './cover-maker';

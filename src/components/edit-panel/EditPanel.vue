@@ -58,9 +58,9 @@ const selectedBaseCard = computed(() => {
   return activeCard.structure.find(bc => bc.id === cardStore.selectedBaseCardId) ?? null;
 });
 
-/** 面板是否应该显示 */
+/** 面板是否应该显示 - 总是显示（空状态或编辑组件） */
 const shouldShow = computed(() => {
-  return selectedBaseCard.value !== null;
+  return true;
 });
 
 /** 面板样式 */
@@ -182,122 +182,51 @@ defineExpose({
 </script>
 
 <template>
-  <Transition
-    name="edit-panel-slide"
-    @before-enter="handleTransitionStart"
-    @after-enter="handleTransitionEnd"
-    @before-leave="handleTransitionStart"
-    @after-leave="handleTransitionEnd"
+  <div
+    :class="panelClass"
+    role="complementary"
+    aria-label="编辑面板"
   >
-    <aside
-      v-show="shouldShow || isExpanded"
-      :class="panelClass"
-      :style="panelStyle"
-      role="complementary"
-      aria-label="编辑面板"
-    >
-      <!-- 面板头部 -->
-      <header class="edit-panel__header">
-        <div class="edit-panel__header-content">
-          <span class="edit-panel__title">{{ panelTitle }}</span>
-          <span
-            v-if="selectedBaseCard"
-            class="edit-panel__subtitle"
-          >
-            {{ selectedBaseCard.id }}
-          </span>
+    <!-- 面板内容 - 直接显示插件编辑器 -->
+    <div class="edit-panel__content">
+      <!-- 有选中卡片时显示编辑组件 -->
+      <Transition name="edit-panel-fade" mode="out-in">
+        <div
+          v-if="selectedBaseCard"
+          :key="selectedBaseCard.id"
+          class="edit-panel__editor"
+        >
+          <PluginHost
+            :card-type="selectedBaseCard.type"
+            :base-card-id="selectedBaseCard.id"
+            :config="selectedBaseCard.config ?? {}"
+            @config-change="handleConfigChange"
+          />
         </div>
         
-        <div class="edit-panel__actions">
-          <button
-            class="edit-panel__action edit-panel__action--toggle"
-            type="button"
-            :aria-label="isExpanded ? '收起面板' : '展开面板'"
-            :aria-expanded="isExpanded"
-            @click="toggleExpand"
-          >
-            <span class="edit-panel__action-icon">
-              {{ isExpanded ? '▶' : '◀' }}
-            </span>
-          </button>
+        <!-- 空状态 -->
+        <div
+          v-else
+          class="edit-panel__empty"
+        >
+          <div class="edit-panel__empty-icon">📝</div>
+          <p class="edit-panel__empty-text">选择一个基础卡片进行编辑</p>
         </div>
-      </header>
-
-      <!-- 面板内容 -->
-      <div
-        v-show="isExpanded"
-        class="edit-panel__content"
-      >
-        <!-- 有选中卡片时显示编辑组件 -->
-        <Transition name="edit-panel-fade" mode="out-in">
-          <div
-            v-if="selectedBaseCard"
-            :key="selectedBaseCard.id"
-            class="edit-panel__editor"
-          >
-            <PluginHost
-              :card-type="selectedBaseCard.type"
-              :base-card-id="selectedBaseCard.id"
-              :config="selectedBaseCard.config ?? {}"
-              @config-change="handleConfigChange"
-            />
-          </div>
-          
-          <!-- 空状态 -->
-          <div
-            v-else
-            class="edit-panel__empty"
-          >
-            <div class="edit-panel__empty-icon">📝</div>
-            <p class="edit-panel__empty-text">{{ emptyText }}</p>
-          </div>
-        </Transition>
-      </div>
-
-      <!-- 调整大小手柄 -->
-      <div
-        v-if="isExpanded && position === 'right'"
-        class="edit-panel__resize-handle edit-panel__resize-handle--left"
-        role="separator"
-        aria-orientation="vertical"
-      ></div>
-    </aside>
-  </Transition>
+      </Transition>
+    </div>
+  </div>
 </template>
 
 <style scoped>
 /* ==================== 面板容器 ==================== */
 .edit-panel {
-  position: fixed;
-  top: 0;
-  bottom: 0;
+  /* 作为 ToolWindow 内容时使用相对定位 */
+  position: relative;
   display: flex;
   flex-direction: column;
+  height: 100%;
   background: var(--chips-color-surface, #ffffff);
-  border-left: 1px solid var(--chips-color-border, #e0e0e0);
-  box-shadow: var(--chips-shadow-md, 0 4px 12px rgba(0, 0, 0, 0.1));
-  z-index: var(--chips-z-index-panel, 200);
   overflow: hidden;
-  transition: transform var(--chips-transition-medium, 0.25s) ease,
-              width var(--chips-transition-medium, 0.25s) ease;
-}
-
-.edit-panel--right {
-  right: 0;
-}
-
-.edit-panel--left {
-  left: 0;
-  border-left: none;
-  border-right: 1px solid var(--chips-color-border, #e0e0e0);
-}
-
-.edit-panel--collapsed {
-  transform: translateX(calc(100% - 40px));
-}
-
-.edit-panel--left.edit-panel--collapsed {
-  transform: translateX(calc(-100% + 40px));
 }
 
 .edit-panel--transitioning {
@@ -385,15 +314,18 @@ defineExpose({
 /* ==================== 内容区 ==================== */
 .edit-panel__content {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
+/* 编辑器容器 - 只提供空间，布局由插件控制 */
 .edit-panel__editor {
   flex: 1;
-  overflow: auto;
-  padding: var(--chips-spacing-md, 12px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ==================== 空状态 ==================== */
@@ -420,50 +352,7 @@ defineExpose({
   line-height: 1.5;
 }
 
-/* ==================== 调整大小手柄 ==================== */
-.edit-panel__resize-handle {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  cursor: ew-resize;
-  transition: background-color var(--chips-transition-fast, 0.15s) ease;
-}
-
-.edit-panel__resize-handle--left {
-  left: 0;
-}
-
-.edit-panel__resize-handle--right {
-  right: 0;
-}
-
-.edit-panel__resize-handle:hover {
-  background: var(--chips-color-primary, #3b82f6);
-}
-
 /* ==================== 过渡动画 ==================== */
-.edit-panel-slide-enter-active,
-.edit-panel-slide-leave-active {
-  transition: transform var(--chips-transition-medium, 0.25s) ease,
-              opacity var(--chips-transition-medium, 0.25s) ease;
-}
-
-.edit-panel-slide-enter-from {
-  transform: translateX(100%);
-  opacity: 0;
-}
-
-.edit-panel-slide-leave-to {
-  transform: translateX(100%);
-  opacity: 0;
-}
-
-.edit-panel--left.edit-panel-slide-enter-from,
-.edit-panel--left.edit-panel-slide-leave-to {
-  transform: translateX(-100%);
-}
-
 /* 编辑器切换动画 */
 .edit-panel-fade-enter-active,
 .edit-panel-fade-leave-active {

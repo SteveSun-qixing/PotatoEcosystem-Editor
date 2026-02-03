@@ -88,6 +88,42 @@ provide('canvas', {
 });
 
 /**
+ * 处理画布滚轮事件
+ * 
+ * 滚动行为：
+ * - 在桌面空白区域滚动 = 缩放桌面
+ * - 在复合卡片上滚动 = 卡片内部滚动（由卡片窗口处理）
+ * - 在工具窗口上滚动 = 窗口内部滚动（由窗口处理）
+ * - Ctrl/Command + 滚轮 = 在任何位置强制缩放桌面
+ * 
+ * @param e - 滚轮事件
+ */
+function onCanvasWheel(e: WheelEvent): void {
+  const target = e.target as HTMLElement;
+  
+  // 检查是否在桌面空白区域（画布背景、网格或桌面层）
+  const isDesktopBackground = 
+    target === canvasRef.value ||
+    target.classList.contains('infinite-canvas__grid') ||
+    target.classList.contains('desktop-layer');
+  
+  // Ctrl/Command + 滚轮 = 强制缩放（在任何位置）
+  if (e.ctrlKey || e.metaKey) {
+    handleWheel(e);
+    return;
+  }
+  
+  // 在桌面空白区域滚动 = 缩放桌面
+  if (isDesktopBackground) {
+    handleWheel(e);
+    return;
+  }
+  
+  // 其他情况（在窗口内）= 让窗口自己处理滚动
+  // 不调用 handleWheel，不阻止默认行为
+}
+
+/**
  * 监听键盘快捷键
  * @param e - 键盘事件
  */
@@ -192,7 +228,7 @@ onUnmounted(() => {
     class="infinite-canvas"
     :class="{ 'infinite-canvas--drag-over': isDragOver }"
     :style="{ cursor: canvasCursor }"
-    @wheel.prevent="handleWheel"
+    @wheel="onCanvasWheel"
     @mousedown="handleMouseDown"
     @mousemove="handleMouseMove"
     @mouseup="handleMouseUp"

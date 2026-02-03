@@ -126,8 +126,12 @@ function handleFocus(): void {
   text-overflow: ellipsis;
 }
 
+/* 工具窗口内容区 - 固定容器，内部滚动由插件控制 */
 .tool-window__content {
-  padding: var(--chips-spacing-md, 12px);
-  min-height: 100px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 </style>

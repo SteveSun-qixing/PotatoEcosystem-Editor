@@ -182,111 +182,19 @@ export class FileService {
   }
 
   /**
-   * 初始化 Mock 文件系统
+   * 初始化文件系统
+   * 
+   * 设计说明：
+   * - 文件系统数据应该从真实的工作目录读取
+   * - 需要用户选择工作目录或打开已有的卡片/箱子文件
+   * - 这里初始化为空，等待用户操作
+   * 
+   * TODO: 通过内核的文件系统接口读取真实目录
    */
   private initMockFileSystem(): void {
-    const now = new Date().toISOString();
-    this.mockFileSystem = [
-      {
-        id: generateId(),
-        name: 'workspace',
-        path: '/workspace',
-        type: 'folder',
-        size: 0,
-        createdAt: now,
-        modifiedAt: now,
-        isDirectory: true,
-        expanded: true,
-        children: [
-          {
-            id: generateId(),
-            name: '项目文档',
-            path: '/workspace/项目文档',
-            type: 'folder',
-            size: 0,
-            createdAt: now,
-            modifiedAt: now,
-            isDirectory: true,
-            expanded: false,
-            children: [
-              {
-                id: generateId(),
-                name: '需求文档.card',
-                path: '/workspace/项目文档/需求文档.card',
-                type: 'card',
-                size: 1024,
-                createdAt: now,
-                modifiedAt: now,
-                isDirectory: false,
-              },
-              {
-                id: generateId(),
-                name: '设计稿集合.box',
-                path: '/workspace/项目文档/设计稿集合.box',
-                type: 'box',
-                size: 2048,
-                createdAt: now,
-                modifiedAt: now,
-                isDirectory: false,
-              },
-            ],
-          },
-          {
-            id: generateId(),
-            name: '学习笔记',
-            path: '/workspace/学习笔记',
-            type: 'folder',
-            size: 0,
-            createdAt: now,
-            modifiedAt: now,
-            isDirectory: true,
-            expanded: false,
-            children: [
-              {
-                id: generateId(),
-                name: 'Vue3学习.card',
-                path: '/workspace/学习笔记/Vue3学习.card',
-                type: 'card',
-                size: 512,
-                createdAt: now,
-                modifiedAt: now,
-                isDirectory: false,
-              },
-              {
-                id: generateId(),
-                name: 'TypeScript笔记.card',
-                path: '/workspace/学习笔记/TypeScript笔记.card',
-                type: 'card',
-                size: 768,
-                createdAt: now,
-                modifiedAt: now,
-                isDirectory: false,
-              },
-            ],
-          },
-          {
-            id: generateId(),
-            name: '我的第一张卡片.card',
-            path: '/workspace/我的第一张卡片.card',
-            type: 'card',
-            size: 256,
-            createdAt: now,
-            modifiedAt: now,
-            isDirectory: false,
-          },
-          {
-            id: generateId(),
-            name: '收藏箱.box',
-            path: '/workspace/收藏箱.box',
-            type: 'box',
-            size: 4096,
-            createdAt: now,
-            modifiedAt: now,
-            isDirectory: false,
-          },
-        ],
-      },
-    ];
+    // 初始化为空，等待用户选择工作目录
+    this.mockFileSystem = [];
+    this.workingDirectory = '';
   }
 
   /**

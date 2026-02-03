@@ -3,9 +3,14 @@
  * 文件管理器主组件
  * @module components/file-manager/FileManager
  * @description 文件管理器主界面，包含工具栏、文件树和状态栏
+ * 
+ * 设计说明：
+ * - 文件管理器显示工作区目录中的文件
+ * - 工作区是编辑器的内置目录，所有文件都保存在这里
+ * - 文件列表从 workspaceService 获取
  */
 
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, inject } from 'vue';
 import FileTree from './FileTree.vue';
 import ContextMenu from './ContextMenu.vue';
 import {
@@ -14,6 +19,7 @@ import {
   getFileService,
   isValidFileName,
 } from '@/core/file-service';
+import { useWorkspaceService, type WorkspaceFile } from '@/core/workspace-service';
 import { createEventEmitter } from '@/core/event-manager';
 
 interface Props {
@@ -34,9 +40,30 @@ const emit = defineEmits<{
   'create-box': [file: FileInfo];
 }>();
 
-// 获取文件服务实例（使用临时事件发射器）
+// 获取工作区服务
+const workspaceService = useWorkspaceService();
+
+// 获取文件服务实例（用于文件操作）
 const events = createEventEmitter();
 const fileService = getFileService(events);
+
+/**
+ * 将工作区文件转换为文件信息格式
+ */
+function convertWorkspaceFileToFileInfo(wsFile: WorkspaceFile): FileInfo {
+  return {
+    id: wsFile.id,
+    name: wsFile.name,
+    path: wsFile.path,
+    type: wsFile.type === 'folder' ? 'folder' : wsFile.type,
+    size: 0,
+    createdAt: wsFile.createdAt,
+    modifiedAt: wsFile.modifiedAt,
+    isDirectory: wsFile.type === 'folder',
+    children: wsFile.children?.map(convertWorkspaceFileToFileInfo),
+    expanded: wsFile.expanded,
+  };
+}
 
 /** 文件树数据 */
 const files = ref<FileInfo[]>([]);
@@ -96,11 +123,19 @@ function flattenAllFiles(fileList: FileInfo[]): FileInfo[] {
 
 /**
  * 加载文件列表
+ * 从工作区服务获取文件列表
  */
 async function loadFiles(): Promise<void> {
   isLoading.value = true;
   try {
-    files.value = await fileService.getFileTree();
+    // 确保工作区已初始化
+    if (!workspaceService.isInitialized.value) {
+      await workspaceService.initialize();
+    }
+    
+    // 从工作区服务获取文件列表
+    const wsFiles = workspaceService.files.value;
+    files.value = wsFiles.map(convertWorkspaceFileToFileInfo);
   } catch (error) {
     console.error('Failed to load files:', error);
   } finally {
@@ -112,9 +147,19 @@ async function loadFiles(): Promise<void> {
  * 刷新文件列表
  */
 async function handleRefresh(): Promise<void> {
-  await fileService.refresh();
+  await workspaceService.refresh();
   await loadFiles();
 }
+
+// 监听工作区文件变化
+watch(
+  () => workspaceService.files.value,
+  () => {
+    // 当工作区文件变化时，更新文件列表
+    files.value = workspaceService.files.value.map(convertWorkspaceFileToFileInfo);
+  },
+  { deep: true }
+);
 
 /**
  * 处理文件选择
@@ -446,7 +491,34 @@ onUnmounted(() => {
     <div class="file-manager__content">
       <div v-if="isLoading" class="file-manager__loading">
         <span class="file-manager__loading-spinner">⏳</span>
-        <span>file.loading</span>
+        <span>正在加载...</span>
+      </div>
+
+      <!-- 空状态：没有文件 -->
+      <div v-else-if="displayFiles.length === 0 && !isSearching" class="file-manager__empty">
+        <span class="file-manager__empty-icon">📂</span>
+        <span class="file-manager__empty-title">暂无文件</span>
+        <span class="file-manager__empty-hint">
+          请打开一个卡片或箱子文件，<br/>
+          或选择一个工作目录
+        </span>
+        <div class="file-manager__empty-actions">
+          <button class="file-manager__empty-btn" @click="handleContextMenuAction('open-file', [])">
+            📄 打开文件
+          </button>
+          <button class="file-manager__empty-btn" @click="handleContextMenuAction('open-folder', [])">
+            📁 选择目录
+          </button>
+        </div>
+      </div>
+
+      <!-- 搜索无结果 -->
+      <div v-else-if="displayFiles.length === 0 && isSearching" class="file-manager__empty">
+        <span class="file-manager__empty-icon">🔍</span>
+        <span class="file-manager__empty-title">未找到匹配的文件</span>
+        <button class="file-manager__empty-btn" @click="clearSearch">
+          清空搜索
+        </button>
       </div>
 
       <FileTree
@@ -657,5 +729,61 @@ onUnmounted(() => {
 .file-manager__statusbar-count {
   font-weight: var(--chips-font-weight-medium, 500);
   color: var(--chips-color-text-secondary, #666);
+}
+
+/* 空状态 */
+.file-manager__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: var(--chips-spacing-sm, 8px);
+  padding: var(--chips-spacing-xl, 32px);
+  color: var(--chips-color-text-tertiary, #999);
+}
+
+.file-manager__empty-icon {
+  font-size: 48px;
+  opacity: 0.5;
+}
+
+.file-manager__empty-title {
+  font-size: var(--chips-font-size-md, 16px);
+  font-weight: var(--chips-font-weight-medium, 500);
+  color: var(--chips-color-text-secondary, #666);
+}
+
+.file-manager__empty-hint {
+  font-size: var(--chips-font-size-sm, 14px);
+  text-align: center;
+  line-height: 1.5;
+  color: var(--chips-color-text-tertiary, #999);
+}
+
+.file-manager__empty-actions {
+  display: flex;
+  gap: var(--chips-spacing-sm, 8px);
+  margin-top: var(--chips-spacing-md, 16px);
+}
+
+.file-manager__empty-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--chips-spacing-xs, 4px);
+  padding: var(--chips-spacing-sm, 8px) var(--chips-spacing-md, 16px);
+  border: 1px solid var(--chips-color-border, #e0e0e0);
+  background: var(--chips-color-bg-primary, #fff);
+  border-radius: var(--chips-radius-base, 6px);
+  font-size: var(--chips-font-size-sm, 14px);
+  color: var(--chips-color-text-secondary, #666);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.file-manager__empty-btn:hover {
+  background-color: var(--chips-color-bg-secondary, #f5f5f5);
+  border-color: var(--chips-color-primary, #1890ff);
+  color: var(--chips-color-primary, #1890ff);
 }
 </style>

@@ -3,12 +3,28 @@
  * 插件宿主组件
  * @module components/edit-panel/PluginHost
  * @description 根据基础卡片类型加载对应的编辑组件插件，管理插件生命周期
+ * 
+ * 设计说明：
+ * - 编辑面板只是容器，实际编辑界面由基础卡片插件提供
+ * - 根据基础卡片类型动态加载对应的编辑器组件
  */
 
-import { ref, computed, watch, onMounted, onUnmounted, shallowRef, nextTick } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, shallowRef, nextTick, defineAsyncComponent, markRaw, type Component } from 'vue';
 import { useCardStore, useEditorStore } from '@/core/state';
 import DefaultEditor from './DefaultEditor.vue';
 import type { EditorPlugin, PluginHostProps } from './types';
+
+// 动态导入富文本编辑器组件（开发阶段直接导入）
+// 生产环境应该通过插件系统加载
+const RichTextEditorComponent = defineAsyncComponent(() => 
+  import('../../../../BasicCardPlugin/Rich-Text-Basic-Card-Plugin/src/editor/RichTextEditor.vue')
+);
+
+/** 已注册的编辑器组件映射 */
+const editorComponents: Record<string, Component> = {
+  'rich-text': RichTextEditorComponent,
+  'RichTextCard': RichTextEditorComponent,
+};
 
 // ==================== Props ====================
 interface Props {
@@ -67,10 +83,23 @@ let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
 /** 是否有未保存的更改 */
 const hasUnsavedChanges = ref(false);
 
+/** 富文本编辑器状态 */
+const editorState = ref({
+  content: '',
+  selection: null,
+  activeFormats: new Set<string>(),
+  currentBlock: 'paragraph',
+  canUndo: false,
+  canRedo: false,
+  isDirty: false,
+  wordCount: 0,
+  isFocused: false,
+});
+
 // ==================== Computed ====================
 /** 是否使用默认编辑器 */
 const useDefaultEditor = computed(() => {
-  return !currentPlugin.value;
+  return !currentPlugin.value && !currentEditorComponent.value;
 });
 
 /** 当前基础卡片信息 */
@@ -102,26 +131,36 @@ async function loadPlugin(): Promise<void> {
     // 卸载当前插件
     await unloadPlugin();
     
-    // 尝试从 SDK 加载插件
-    // TODO: 实际实现时从 SDK 获取插件
-    // const plugin = await sdk.plugins.getEditor(props.cardType);
-    const plugin = await getEditorPlugin(props.cardType);
-    
-    if (plugin && pluginContainerRef.value) {
-      // 挂载插件
-      await plugin.mount(pluginContainerRef.value, props.config);
-      
-      // 设置配置变更回调
-      if (plugin.onConfigChange) {
-        plugin.onConfigChange(handlePluginConfigChange);
-      }
-      
-      currentPlugin.value = plugin;
-      emit('plugin-loaded', plugin);
-    } else {
-      // 没有找到插件，使用默认编辑器
+    // 检查是否有注册的编辑器组件
+    const component = editorComponents[props.cardType];
+    if (component) {
+      // 使用注册的 Vue 组件
+      currentEditorComponent.value = markRaw(component);
       currentPlugin.value = null;
       emit('plugin-loaded', null);
+      console.log('[PluginHost] 加载编辑器组件:', props.cardType);
+    } else {
+      // 尝试加载插件
+      const plugin = await getEditorPlugin(props.cardType);
+      
+      if (plugin && pluginContainerRef.value && 'mount' in plugin) {
+        // 挂载插件
+        await plugin.mount(pluginContainerRef.value, props.config);
+        
+        // 设置配置变更回调
+        if (plugin.onConfigChange) {
+          plugin.onConfigChange(handlePluginConfigChange);
+        }
+        
+        currentPlugin.value = plugin;
+        currentEditorComponent.value = null;
+        emit('plugin-loaded', plugin);
+      } else {
+        // 没有找到插件，使用默认编辑器
+        currentPlugin.value = null;
+        currentEditorComponent.value = null;
+        emit('plugin-loaded', null);
+      }
     }
     
     // 初始化本地配置
@@ -129,6 +168,7 @@ async function loadPlugin(): Promise<void> {
   } catch (error) {
     loadError.value = error instanceof Error ? error : new Error(String(error));
     emit('plugin-error', loadError.value);
+    console.error('[PluginHost] 加载插件失败:', error);
   } finally {
     isLoading.value = false;
   }
@@ -159,14 +199,28 @@ async function unloadPlugin(): Promise<void> {
 }
 
 /**
- * 获取编辑器插件（模拟实现）
- * 实际实现时从 SDK 获取
+ * 获取编辑器插件
+ * 检查是否有注册的编辑器组件
  */
 async function getEditorPlugin(cardType: string): Promise<EditorPlugin | null> {
-  // TODO: 从 SDK 获取实际的编辑器插件
-  // 目前返回 null，使用默认编辑器
+  // 检查是否有注册的编辑器组件
+  if (editorComponents[cardType]) {
+    // 返回一个标记，表示使用注册的组件
+    return {
+      type: 'component',
+      component: editorComponents[cardType],
+    } as unknown as EditorPlugin;
+  }
   return null;
 }
+
+/** 当前使用的编辑器组件 */
+const currentEditorComponent = shallowRef<Component | null>(null);
+
+/** 是否使用插件组件 */
+const usePluginComponent = computed(() => {
+  return currentEditorComponent.value !== null;
+});
 
 /**
  * 处理插件配置变更
@@ -182,6 +236,21 @@ function handlePluginConfigChange(newConfig: Record<string, unknown>): void {
  */
 function handleDefaultConfigChange(newConfig: Record<string, unknown>): void {
   localConfig.value = { ...newConfig };
+  hasUnsavedChanges.value = true;
+  debouncedEmitChange();
+}
+
+/**
+ * 处理富文本编辑器内容变更
+ */
+function handleEditorContentChange(html: string): void {
+  localConfig.value = { 
+    ...localConfig.value, 
+    content_text: html,
+    content_source: 'inline',
+  };
+  editorState.value.content = html;
+  editorState.value.isDirty = true;
   hasUnsavedChanges.value = true;
   debouncedEmitChange();
 }
@@ -359,9 +428,22 @@ defineExpose({
       </div>
     </Transition>
     
-    <!-- 插件容器 -->
+    <!-- 注册的编辑器组件 -->
     <div
-      v-show="!isLoading && !loadError && !useDefaultEditor"
+      v-if="!isLoading && !loadError && usePluginComponent && currentEditorComponent"
+      class="plugin-host__editor-component"
+    >
+      <component
+        :is="currentEditorComponent"
+        :initial-content="(localConfig.content_text as string) || ''"
+        :options="{ toolbar: true, autoSave: true, placeholder: '在此输入内容...' }"
+        :on-content-change="handleEditorContentChange"
+      />
+    </div>
+    
+    <!-- 插件容器（用于挂载原生插件） -->
+    <div
+      v-show="!isLoading && !loadError && currentPlugin && !usePluginComponent"
       ref="pluginContainerRef"
       class="plugin-host__container"
     ></div>
@@ -395,11 +477,11 @@ defineExpose({
 
 <style scoped>
 /* ==================== 容器 ==================== */
+/* 编辑面板只提供容器，界面完全由插件设计 */
 .plugin-host {
   position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 200px;
   height: 100%;
 }
 
@@ -482,6 +564,15 @@ defineExpose({
 .plugin-host__container {
   flex: 1;
   overflow: auto;
+}
+
+/* ==================== 编辑器组件 ==================== */
+/* 插件容器 - 布局完全由插件自己控制 */
+.plugin-host__editor-component {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ==================== 默认编辑器 ==================== */
