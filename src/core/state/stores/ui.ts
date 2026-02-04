@@ -19,8 +19,8 @@ export type DockPosition = 'bottom' | 'left' | 'right';
  * UI Store 状态接口
  */
 export interface UIStoreState {
-  /** 窗口列表 */
-  windows: Map<string, WindowConfig>;
+  /** 窗口列表（使用数组以确保响应式） */
+  windowList: WindowConfig[];
   /** 当前焦点窗口 ID */
   focusedWindowId: string | null;
   /** 最高 z-index */
@@ -44,7 +44,7 @@ export interface UIStoreState {
   /** 网格大小 */
   gridSize: number;
   /** 工具窗口最小化状态 */
-  minimizedTools: Set<string>;
+  minimizedToolIds: string[];
   /** 全屏模式 */
   isFullscreen: boolean;
   /** 面板拖动状态 */
@@ -76,7 +76,7 @@ export interface UIStoreState {
  */
 export const useUIStore = defineStore('ui', {
   state: (): UIStoreState => ({
-    windows: new Map(),
+    windowList: [],
     focusedWindowId: null,
     maxZIndex: 100,
     canvas: {
@@ -92,24 +92,28 @@ export const useUIStore = defineStore('ui', {
     showGrid: true,
     snapToGrid: true,
     gridSize: 20,
-    minimizedTools: new Set(),
+    minimizedToolIds: [],
     isFullscreen: false,
     isDragging: false,
   }),
 
   getters: {
     /**
-     * 获取窗口列表（数组形式）
+     * 获取窗口 Map（兼容旧代码）
      */
-    windowList(): WindowConfig[] {
-      return Array.from(this.windows.values());
+    windows(): Map<string, WindowConfig> {
+      const map = new Map<string, WindowConfig>();
+      for (const w of this.windowList) {
+        map.set(w.id, w);
+      }
+      return map;
     },
 
     /**
      * 获取卡片窗口
      */
     cardWindows(): CardWindowConfig[] {
-      return Array.from(this.windows.values()).filter(
+      return this.windowList.filter(
         (w): w is CardWindowConfig => w.type === 'card'
       );
     },
@@ -118,7 +122,7 @@ export const useUIStore = defineStore('ui', {
      * 获取工具窗口
      */
     toolWindows(): ToolWindowConfig[] {
-      return Array.from(this.windows.values()).filter(
+      return this.windowList.filter(
         (w): w is ToolWindowConfig => w.type === 'tool'
       );
     },
@@ -128,7 +132,7 @@ export const useUIStore = defineStore('ui', {
      */
     focusedWindow(): WindowConfig | null {
       if (!this.focusedWindowId) return null;
-      return this.windows.get(this.focusedWindowId) ?? null;
+      return this.windowList.find(w => w.id === this.focusedWindowId) ?? null;
     },
 
     /**
@@ -142,21 +146,28 @@ export const useUIStore = defineStore('ui', {
      * 窗口数量
      */
     windowCount(): number {
-      return this.windows.size;
+      return this.windowList.length;
     },
 
     /**
      * 是否有窗口
      */
     hasWindows(): boolean {
-      return this.windows.size > 0;
+      return this.windowList.length > 0;
     },
 
     /**
      * 获取最小化的工具窗口列表
      */
     minimizedToolList(): string[] {
-      return Array.from(this.minimizedTools);
+      return this.minimizedToolIds;
+    },
+
+    /**
+     * 最小化工具 Set（兼容旧代码）
+     */
+    minimizedTools(): Set<string> {
+      return new Set(this.minimizedToolIds);
     },
 
     /**
@@ -174,7 +185,16 @@ export const useUIStore = defineStore('ui', {
      */
     addWindow(config: WindowConfig): void {
       config.zIndex = ++this.maxZIndex;
-      this.windows.set(config.id, config);
+      // 检查是否已存在
+      const existingIndex = this.windowList.findIndex(w => w.id === config.id);
+      if (existingIndex >= 0) {
+        // 更新现有窗口
+        this.windowList[existingIndex] = config;
+      } else {
+        // 添加新窗口
+        this.windowList.push(config);
+      }
+      console.log('[UIStore] 添加窗口:', config.id, 'type:', config.type, '当前窗口数:', this.windowList.length);
     },
 
     /**
@@ -182,8 +202,16 @@ export const useUIStore = defineStore('ui', {
      * @param windowId - 窗口 ID
      */
     removeWindow(windowId: string): void {
-      this.windows.delete(windowId);
-      this.minimizedTools.delete(windowId);
+      const index = this.windowList.findIndex(w => w.id === windowId);
+      if (index >= 0) {
+        this.windowList.splice(index, 1);
+      }
+      
+      const toolIndex = this.minimizedToolIds.indexOf(windowId);
+      if (toolIndex >= 0) {
+        this.minimizedToolIds.splice(toolIndex, 1);
+      }
+      
       if (this.focusedWindowId === windowId) {
         this.focusedWindowId = null;
       }
@@ -195,7 +223,7 @@ export const useUIStore = defineStore('ui', {
      * @param updates - 要更新的配置
      */
     updateWindow(windowId: string, updates: Partial<WindowConfig>): void {
-      const window = this.windows.get(windowId);
+      const window = this.windowList.find(w => w.id === windowId);
       if (window) {
         Object.assign(window, updates);
       }
@@ -207,7 +235,7 @@ export const useUIStore = defineStore('ui', {
      * @returns 窗口配置或 undefined
      */
     getWindow(windowId: string): WindowConfig | undefined {
-      return this.windows.get(windowId);
+      return this.windowList.find(w => w.id === windowId);
     },
 
     /**
@@ -216,7 +244,7 @@ export const useUIStore = defineStore('ui', {
      */
     focusWindow(windowId: string): void {
       this.focusedWindowId = windowId;
-      const window = this.windows.get(windowId);
+      const window = this.windowList.find(w => w.id === windowId);
       if (window) {
         window.zIndex = ++this.maxZIndex;
       }
@@ -236,7 +264,7 @@ export const useUIStore = defineStore('ui', {
      * @param y - Y 坐标
      */
     moveWindow(windowId: string, x: number, y: number): void {
-      const window = this.windows.get(windowId);
+      const window = this.windowList.find(w => w.id === windowId);
       if (window) {
         window.position = { x, y };
       }
@@ -249,7 +277,7 @@ export const useUIStore = defineStore('ui', {
      * @param height - 高度
      */
     resizeWindow(windowId: string, width: number, height: number): void {
-      const window = this.windows.get(windowId);
+      const window = this.windowList.find(w => w.id === windowId);
       if (window) {
         window.size = { width, height };
       }
@@ -261,7 +289,7 @@ export const useUIStore = defineStore('ui', {
      * @param state - 窗口状态
      */
     setWindowState(windowId: string, state: WindowConfig['state']): void {
-      const window = this.windows.get(windowId);
+      const window = this.windowList.find(w => w.id === windowId);
       if (window) {
         window.state = state;
       }
@@ -431,8 +459,11 @@ export const useUIStore = defineStore('ui', {
      * @param toolId - 工具窗口 ID
      */
     minimizeTool(toolId: string): void {
-      this.minimizedTools.add(toolId);
-      const window = this.windows.get(toolId);
+      if (!this.minimizedToolIds.includes(toolId)) {
+        this.minimizedToolIds.push(toolId);
+      }
+      
+      const window = this.windowList.find(w => w.id === toolId);
       if (window) {
         window.state = 'minimized';
       }
@@ -443,8 +474,12 @@ export const useUIStore = defineStore('ui', {
      * @param toolId - 工具窗口 ID
      */
     restoreTool(toolId: string): void {
-      this.minimizedTools.delete(toolId);
-      const window = this.windows.get(toolId);
+      const index = this.minimizedToolIds.indexOf(toolId);
+      if (index >= 0) {
+        this.minimizedToolIds.splice(index, 1);
+      }
+      
+      const window = this.windowList.find(w => w.id === toolId);
       if (window) {
         window.state = 'normal';
       }
@@ -477,9 +512,9 @@ export const useUIStore = defineStore('ui', {
      * 清除所有窗口
      */
     clearWindows(): void {
-      this.windows.clear();
+      this.windowList = [];
       this.focusedWindowId = null;
-      this.minimizedTools.clear();
+      this.minimizedToolIds = [];
     },
 
     /**

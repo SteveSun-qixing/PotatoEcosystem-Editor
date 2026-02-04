@@ -250,7 +250,7 @@ export class WindowManager {
    */
   getWindow(windowId: string): WindowConfig | undefined {
     const uiStore = this.getUIStore();
-    return uiStore.windows.get(windowId);
+    return uiStore.getWindow(windowId);
   }
 
   /**
@@ -296,7 +296,7 @@ export class WindowManager {
    */
   hasWindow(windowId: string): boolean {
     const uiStore = this.getUIStore();
-    return uiStore.windows.has(windowId);
+    return uiStore.getWindow(windowId) !== undefined;
   }
 
   /**

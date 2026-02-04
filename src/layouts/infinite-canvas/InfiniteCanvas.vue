@@ -5,7 +5,7 @@
  * @description 编辑器核心布局 - 两层界面设计（桌面层 + 窗口层）
  */
 
-import { ref, computed, onMounted, onUnmounted, provide } from 'vue';
+import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue';
 import DesktopLayer from './DesktopLayer.vue';
 import WindowLayer from './WindowLayer.vue';
 import ZoomControl from './ZoomControl.vue';
@@ -30,8 +30,10 @@ const dragCreate = useGlobalDragCreate();
 /** 拖放悬停状态 */
 const isDragOver = ref(false);
 
-/** 拖放预览位置 */
-const dragPreviewPosition = ref({ x: 0, y: 0 });
+/** 拖放预览位置 - 使用 dragState 中的位置，确保拖拽开始时就有正确的初始位置 */
+const dragPreviewPosition = computed(() => 
+  dragCreate.dragState.value.previewPosition ?? { x: 0, y: 0 }
+);
 
 /** 使用画布控制 hook */
 const {
@@ -166,8 +168,7 @@ function handleDragOver(e: DragEvent): void {
     e.dataTransfer.dropEffect = 'copy';
   }
 
-  // 更新预览位置
-  dragPreviewPosition.value = { x: e.clientX, y: e.clientY };
+  // 更新预览位置（dragPreviewPosition 现在是 computed，从 dragState 获取）
   dragCreate.updatePreview(e.clientX, e.clientY);
 }
 
@@ -274,9 +275,9 @@ onUnmounted(() => {
       @fit="fitToContent"
     />
 
-    <!-- 拖放预览 -->
+    <!-- 拖放预览（从拖拽开始就显示，不仅是在画布内） -->
     <DragPreview
-      v-if="isDragOver && dragCreate.dragState.value.data"
+      v-if="dragCreate.dragState.value.isDragging && dragCreate.dragState.value.data"
       :data="dragCreate.dragState.value.data"
       :position="dragPreviewPosition"
     />

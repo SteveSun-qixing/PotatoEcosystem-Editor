@@ -22,13 +22,19 @@ import {
 import { useWorkspaceService, type WorkspaceFile } from '@/core/workspace-service';
 import { createEventEmitter } from '@/core/event-manager';
 
+/**
+ * 开发阶段工作区路径
+ * 生产阶段由用户选择，可在设置中调整
+ */
+const DEV_WORKSPACE_PATH = '/ProductFinishedProductTestingSpace/TestWorkspace';
+
 interface Props {
   /** 初始工作目录 */
   workingDirectory?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  workingDirectory: '/workspace',
+  workingDirectory: DEV_WORKSPACE_PATH,
 });
 
 const emit = defineEmits<{

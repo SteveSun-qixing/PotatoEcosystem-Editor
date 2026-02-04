@@ -134,7 +134,7 @@ onMounted(() => {
       <iframe
         ref="iframeRef"
         class="template-preview__iframe"
-        sandbox="allow-same-origin"
+        sandbox="allow-same-origin allow-scripts"
         title="封面预览"
       />
     </div>

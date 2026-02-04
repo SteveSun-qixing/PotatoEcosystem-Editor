@@ -182,19 +182,38 @@ export class FileService {
   }
 
   /**
+   * 开发阶段工作区路径
+   */
+  private static readonly DEV_WORKSPACE_PATH = '/ProductFinishedProductTestingSpace/TestWorkspace';
+
+  /**
    * 初始化文件系统
    * 
-   * 设计说明：
-   * - 文件系统数据应该从真实的工作目录读取
-   * - 需要用户选择工作目录或打开已有的卡片/箱子文件
-   * - 这里初始化为空，等待用户操作
-   * 
-   * TODO: 通过内核的文件系统接口读取真实目录
+   * 开发阶段：使用固定的测试工作空间路径
+   * 生产阶段：
+   * - 首次启动让用户选择工作区位置
+   * - 可在设置中调整
+   * - 通过 Foundation 的 ElectronFramework 读取真实目录
    */
   private initMockFileSystem(): void {
-    // 初始化为空，等待用户选择工作目录
-    this.mockFileSystem = [];
-    this.workingDirectory = '';
+    // 开发阶段：使用测试工作空间
+    this.workingDirectory = FileService.DEV_WORKSPACE_PATH;
+    
+    // 初始化根目录结构
+    this.mockFileSystem = [
+      {
+        id: 'root',
+        name: 'TestWorkspace',
+        path: FileService.DEV_WORKSPACE_PATH,
+        type: 'folder',
+        size: 0,
+        createdAt: new Date().toISOString(),
+        modifiedAt: new Date().toISOString(),
+        isDirectory: true,
+        children: [],
+        expanded: true,
+      },
+    ];
   }
 
   /**

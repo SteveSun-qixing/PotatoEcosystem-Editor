@@ -204,7 +204,10 @@ export const useCardStore = defineStore('card', {
         lastModified: Date.now(),
         filePath,
       };
-      this.openCards.set(card.id, cardInfo);
+      // 创建新的 Map 引用以确保 Vue 响应式系统能检测到变化
+      const newOpenCards = new Map(this.openCards);
+      newOpenCards.set(card.id, cardInfo);
+      this.openCards = newOpenCards;
     },
 
     /**
@@ -212,8 +215,14 @@ export const useCardStore = defineStore('card', {
      * @param cardId - 卡片 ID
      */
     removeCard(cardId: string): void {
-      this.openCards.delete(cardId);
-      this.loadingCards.delete(cardId);
+      // 创建新的 Map/Set 引用以确保响应式
+      const newOpenCards = new Map(this.openCards);
+      newOpenCards.delete(cardId);
+      this.openCards = newOpenCards;
+      
+      const newLoadingCards = new Set(this.loadingCards);
+      newLoadingCards.delete(cardId);
+      this.loadingCards = newLoadingCards;
 
       if (this.activeCardId === cardId) {
         // 切换到下一个卡片或设为 null
@@ -392,11 +401,14 @@ export const useCardStore = defineStore('card', {
       if (card) {
         card.isLoading = loading;
       }
+      // 创建新的 Set 引用以确保响应式
+      const newLoadingCards = new Set(this.loadingCards);
       if (loading) {
-        this.loadingCards.add(cardId);
+        newLoadingCards.add(cardId);
       } else {
-        this.loadingCards.delete(cardId);
+        newLoadingCards.delete(cardId);
       }
+      this.loadingCards = newLoadingCards;
     },
 
     /**
@@ -415,10 +427,10 @@ export const useCardStore = defineStore('card', {
      * 清除所有卡片
      */
     clearAll(): void {
-      this.openCards.clear();
+      this.openCards = new Map();
       this.activeCardId = null;
       this.selectedBaseCardId = null;
-      this.loadingCards.clear();
+      this.loadingCards = new Set();
     },
   },
 });

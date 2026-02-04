@@ -226,9 +226,9 @@ describe('E2E: 文件导入导出流程', () => {
   });
 
   describe('场景7: 工作目录管理', () => {
-    it('应初始为空工作目录', () => {
-      // 设计说明：初始化为空，等待用户选择工作目录
-      expect(fileService.getWorkingDirectory()).toBe('');
+    it('应初始为开发阶段默认工作目录', () => {
+      // 设计说明：开发阶段使用固定的测试工作空间路径
+      expect(fileService.getWorkingDirectory()).toBe('/ProductFinishedProductTestingSpace/TestWorkspace');
     });
 
     it('应支持设置工作目录', () => {

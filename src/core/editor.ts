@@ -313,9 +313,8 @@ export class ChipsEditor {
 
     // 更新状态
     this.cardStore.markCardSaved(cardId);
-    if (options.path) {
-      this.cardStore.updateFilePath(cardId, options.path);
-    }
+    // 总是更新 filePath，确保导出时可以找到卡片路径
+    this.cardStore.updateFilePath(cardId, path);
 
     // 检查是否还有未保存的卡片
     if (!this.cardStore.hasModifiedCards) {

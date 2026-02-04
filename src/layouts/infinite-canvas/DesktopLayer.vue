@@ -16,7 +16,11 @@ const cardStore = useCardStore();
 const windowManager = useWindowManager();
 
 /** 获取卡片窗口（在桌面层显示） */
-const cardWindows = computed(() => uiStore.cardWindows);
+const cardWindows = computed(() => {
+  const windows = uiStore.cardWindows;
+  console.log('[DesktopLayer] cardWindows computed:', windows.length, windows.map(w => w.id));
+  return windows;
+});
 
 /**
  * 处理卡片窗口更新

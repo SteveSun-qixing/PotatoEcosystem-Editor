@@ -20,7 +20,9 @@ function createWindow() {
       preload: path.join(__dirname$1, "preload.js"),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false
+      sandbox: false,
+      // 开发模式下允许访问本地文件服务器
+      webSecurity: !isDev
     },
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 16 },
@@ -202,7 +204,13 @@ app.whenReady().then(() => {
   startCoreProcess();
   createWindow();
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
+    } else if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });

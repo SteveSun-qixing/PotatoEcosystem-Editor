@@ -59,11 +59,23 @@ const currentPlugin = shallowRef<EditorPlugin | null>(null);
 /** 插件容器引用 */
 const pluginContainerRef = ref<HTMLElement | null>(null);
 
-/** 是否正在加载 */
-const isLoading = ref(true);
+/** 是否正在加载（内部状态） */
+const isLoadingInternal = ref(true);
+
+/** 是否显示加载状态（延迟显示，防止闪烁） */
+const showLoading = ref(false);
+
+/** 加载延迟定时器 */
+let loadingDelayTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 加载延迟阈值（毫秒），超过此时间才显示加载状态 */
+const LOADING_DELAY = 150;
 
 /** 加载错误 */
 const loadError = ref<Error | null>(null);
+
+/** 已加载的组件类型缓存 */
+const loadedTypes = new Set<string>();
 
 /** 本地配置副本（用于防抖） */
 const localConfig = ref<Record<string, unknown>>({});
@@ -84,7 +96,17 @@ let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
 const hasUnsavedChanges = ref(false);
 
 /** 富文本编辑器状态 */
-const editorState = ref({
+const editorState = ref<{
+  content: string;
+  selection: { startOffset: number; endOffset: number; collapsed: boolean } | null;
+  activeFormats: Set<string>;
+  currentBlock: string;
+  canUndo: boolean;
+  canRedo: boolean;
+  isDirty: boolean;
+  wordCount: number;
+  isFocused: boolean;
+}>({
   content: '',
   selection: null,
   activeFormats: new Set<string>(),
@@ -121,10 +143,48 @@ const errorText = computed(() => {
 
 // ==================== Methods ====================
 /**
+ * 开始加载（延迟显示加载状态）
+ */
+function startLoading(): void {
+  isLoadingInternal.value = true;
+  
+  // 清除之前的定时器
+  if (loadingDelayTimer) {
+    clearTimeout(loadingDelayTimer);
+  }
+  
+  // 延迟显示加载状态，防止快速切换时闪烁
+  loadingDelayTimer = setTimeout(() => {
+    if (isLoadingInternal.value) {
+      showLoading.value = true;
+    }
+  }, LOADING_DELAY);
+}
+
+/**
+ * 结束加载
+ */
+function endLoading(): void {
+  isLoadingInternal.value = false;
+  showLoading.value = false;
+  
+  if (loadingDelayTimer) {
+    clearTimeout(loadingDelayTimer);
+    loadingDelayTimer = null;
+  }
+}
+
+/**
  * 加载编辑器插件
  */
 async function loadPlugin(): Promise<void> {
-  isLoading.value = true;
+  // 如果是已加载过的类型，不显示加载状态（组件已缓存）
+  const isFirstLoad = !loadedTypes.has(props.cardType);
+  
+  if (isFirstLoad) {
+    startLoading();
+  }
+  
   loadError.value = null;
   
   try {
@@ -138,6 +198,9 @@ async function loadPlugin(): Promise<void> {
       currentEditorComponent.value = markRaw(component);
       currentPlugin.value = null;
       emit('plugin-loaded', null);
+      
+      // 标记为已加载
+      loadedTypes.add(props.cardType);
       console.log('[PluginHost] 加载编辑器组件:', props.cardType);
     } else {
       // 尝试加载插件
@@ -155,6 +218,9 @@ async function loadPlugin(): Promise<void> {
         currentPlugin.value = plugin;
         currentEditorComponent.value = null;
         emit('plugin-loaded', plugin);
+        
+        // 标记为已加载
+        loadedTypes.add(props.cardType);
       } else {
         // 没有找到插件，使用默认编辑器
         currentPlugin.value = null;
@@ -170,7 +236,7 @@ async function loadPlugin(): Promise<void> {
     emit('plugin-error', loadError.value);
     console.error('[PluginHost] 加载插件失败:', error);
   } finally {
-    isLoading.value = false;
+    endLoading();
   }
 }
 
@@ -251,8 +317,36 @@ function handleEditorContentChange(html: string): void {
   };
   editorState.value.content = html;
   editorState.value.isDirty = true;
+  editorState.value.wordCount = html.replace(/<[^>]*>/g, '').length;
   hasUnsavedChanges.value = true;
   debouncedEmitChange();
+}
+
+/**
+ * 处理选区变化
+ */
+function handleSelectionChange(
+  selection: { startOffset: number; endOffset: number; collapsed: boolean } | null,
+  formats: Set<string>,
+  block: string
+): void {
+  editorState.value.selection = selection;
+  editorState.value.activeFormats = formats;
+  editorState.value.currentBlock = block;
+}
+
+/**
+ * 处理编辑器聚焦
+ */
+function handleEditorFocus(): void {
+  editorState.value.isFocused = true;
+}
+
+/**
+ * 处理编辑器失焦
+ */
+function handleEditorBlur(): void {
+  editorState.value.isFocused = false;
 }
 
 /**
@@ -379,6 +473,11 @@ onUnmounted(async () => {
     clearTimeout(debounceTimer);
   }
   
+  // 清理加载延迟定时器
+  if (loadingDelayTimer) {
+    clearTimeout(loadingDelayTimer);
+  }
+  
   // 停止自动保存
   stopAutoSave();
   
@@ -388,7 +487,7 @@ onUnmounted(async () => {
 
 // ==================== Expose ====================
 defineExpose({
-  isLoading,
+  isLoading: isLoadingInternal,
   loadError,
   currentPlugin,
   hasUnsavedChanges,
@@ -399,10 +498,10 @@ defineExpose({
 
 <template>
   <div class="plugin-host">
-    <!-- 加载状态 -->
+    <!-- 加载状态（延迟显示，防止闪烁） -->
     <Transition name="plugin-host-fade">
       <div
-        v-if="isLoading"
+        v-if="showLoading"
         class="plugin-host__loading"
       >
         <div class="plugin-host__spinner"></div>
@@ -413,7 +512,7 @@ defineExpose({
     <!-- 错误状态 -->
     <Transition name="plugin-host-fade">
       <div
-        v-if="!isLoading && loadError"
+        v-if="!showLoading && loadError"
         class="plugin-host__error"
       >
         <div class="plugin-host__error-icon">⚠️</div>
@@ -430,20 +529,24 @@ defineExpose({
     
     <!-- 注册的编辑器组件 -->
     <div
-      v-if="!isLoading && !loadError && usePluginComponent && currentEditorComponent"
+      v-if="!isLoadingInternal && !loadError && usePluginComponent && currentEditorComponent"
       class="plugin-host__editor-component"
     >
       <component
         :is="currentEditorComponent"
         :initial-content="(localConfig.content_text as string) || ''"
         :options="{ toolbar: true, autoSave: true, placeholder: '在此输入内容...' }"
+        :state="editorState"
         :on-content-change="handleEditorContentChange"
+        :on-selection-change="handleSelectionChange"
+        :on-focus="handleEditorFocus"
+        :on-blur="handleEditorBlur"
       />
     </div>
     
     <!-- 插件容器（用于挂载原生插件） -->
     <div
-      v-show="!isLoading && !loadError && currentPlugin && !usePluginComponent"
+      v-show="!isLoadingInternal && !loadError && currentPlugin && !usePluginComponent"
       ref="pluginContainerRef"
       class="plugin-host__container"
     ></div>
@@ -451,7 +554,7 @@ defineExpose({
     <!-- 默认编辑器 -->
     <Transition name="plugin-host-fade">
       <div
-        v-if="!isLoading && !loadError && useDefaultEditor && currentBaseCard"
+        v-if="!isLoadingInternal && !loadError && useDefaultEditor && currentBaseCard"
         class="plugin-host__default-editor"
       >
         <DefaultEditor

@@ -38,6 +38,8 @@ function createWindow(): void {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
+      // 开发模式下允许访问本地文件服务器
+      webSecurity: !isDev,
     },
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
@@ -271,9 +273,17 @@ app.whenReady().then(() => {
   // 创建窗口
   createWindow();
 
-  // macOS: 点击 Dock 图标时重新创建窗口
+  // macOS: 点击 Dock 图标时显示或重新创建窗口
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (mainWindow) {
+      // 窗口存在但可能被隐藏，显示并聚焦
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
+    } else if (BrowserWindow.getAllWindows().length === 0) {
+      // 没有窗口，重新创建
       createWindow();
     }
   });

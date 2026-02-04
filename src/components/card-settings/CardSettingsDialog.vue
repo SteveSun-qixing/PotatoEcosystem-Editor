@@ -6,10 +6,12 @@
  */
 
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import { useCardStore } from '@/core/state';
+import { useCardStore, type CardInfo, type BaseCardInfo } from '@/core/state';
 import { useWorkspaceService } from '@/core/workspace-service';
+import { conversionService } from '@/services/conversion-service';
 import CoverMaker from '@/components/cover-maker/CoverMaker.vue';
 import type { CoverData } from '@/components/cover-maker/types';
+import JSZip from 'jszip';
 
 interface Props {
   /** 卡片 ID */
@@ -53,6 +55,165 @@ const isLoadingThemes = ref(false);
 const exportProgress = ref(0);
 const exportStatus = ref<'idle' | 'exporting' | 'success' | 'error'>('idle');
 const exportMessage = ref('');
+
+// 开发文件服务器地址
+const DEV_FILE_SERVER = 'http://localhost:3456';
+const FILE_SERVER_URL = DEV_FILE_SERVER; // 转换 API 使用
+const EXPORT_DIR = '/ProductFinishedProductTestingSpace/ExternalEnvironment';
+
+// 导入 CardFileData 类型
+import type { CardFileData } from '@/services/conversion-service';
+
+/**
+ * 保存卡片到工作区
+ * 在导出前自动保存，确保工作区数据是最新的
+ */
+async function saveCardToWorkspace(cardId: string, cardPath: string, card: CardInfo): Promise<void> {
+  // 辅助函数：YAML 序列化
+  const toYaml = (obj: unknown, indent = 0): string => {
+    const spaces = '  '.repeat(indent);
+    if (obj === null || obj === undefined) return 'null';
+    if (typeof obj === 'string') {
+      if (obj.includes('\n') || obj.includes(':') || obj.includes('#') || 
+          obj.includes("'") || obj.includes('"') || obj.startsWith(' ') ||
+          obj.endsWith(' ') || obj === '') {
+        return `"${obj.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
+      }
+      return obj;
+    }
+    if (typeof obj === 'number' || typeof obj === 'boolean') return String(obj);
+    if (Array.isArray(obj)) {
+      if (obj.length === 0) return '[]';
+      return obj.map(item => {
+        if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+          const entries = Object.entries(item as Record<string, unknown>);
+          if (entries.length === 0) return `${spaces}- {}`;
+          const firstEntry = entries[0]!;
+          const [firstKey, firstVal] = firstEntry;
+          const firstValue = typeof firstVal === 'object' && firstVal !== null
+            ? `\n${toYaml(firstVal, indent + 2)}`
+            : ` ${toYaml(firstVal, 0)}`;
+          const firstLine = `${spaces}- ${firstKey}:${firstValue}`;
+          const restLines = entries.slice(1).map(([key, value]) => {
+            if (typeof value === 'object' && value !== null) {
+              if (Array.isArray(value) && value.length === 0) return `${spaces}  ${key}: []`;
+              if (!Array.isArray(value) && Object.keys(value).length === 0) return `${spaces}  ${key}: {}`;
+              return `${spaces}  ${key}:\n${toYaml(value, indent + 2)}`;
+            }
+            return `${spaces}  ${key}: ${toYaml(value, 0)}`;
+          });
+          return [firstLine, ...restLines].join('\n');
+        }
+        return `${spaces}- ${toYaml(item, 0)}`;
+      }).join('\n');
+    }
+    if (typeof obj === 'object') {
+      const entries = Object.entries(obj as Record<string, unknown>);
+      if (entries.length === 0) return '{}';
+      return entries.map(([key, value]) => {
+        if (typeof value === 'object' && value !== null) {
+          if (Array.isArray(value) && value.length === 0) return `${spaces}${key}: []`;
+          if (!Array.isArray(value) && Object.keys(value).length === 0) return `${spaces}${key}: {}`;
+          return `${spaces}${key}:\n${toYaml(value, indent + 1)}`;
+        }
+        return `${spaces}${key}: ${toYaml(value, indent)}`;
+      }).join('\n');
+    }
+    return String(obj);
+  };
+  
+  // 辅助函数：写入文件
+  const writeFile = async (filePath: string, content: string) => {
+    await fetch(`${DEV_FILE_SERVER}/file/${encodeURIComponent(filePath)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+  };
+  
+  // 辅助函数：创建目录
+  const mkdir = async (dirPath: string) => {
+    await fetch(`${DEV_FILE_SERVER}/mkdir/${encodeURIComponent(dirPath)}`, {
+      method: 'POST',
+    });
+  };
+  
+  // 创建目录结构
+  await mkdir(cardPath);
+  await mkdir(`${cardPath}/.card`);
+  await mkdir(`${cardPath}/content`);
+  await mkdir(`${cardPath}/cardcover`);
+  
+  // 写入 metadata.yaml
+  const metadata = {
+    card_id: cardId,
+    name: card.metadata.name,
+    created_at: card.metadata.created_at,
+    modified_at: new Date().toISOString(),
+    theme_id: card.metadata.theme || '薯片官方：默认主题',
+    tags: card.metadata.tags || [],
+    chips_standards_version: '1.0.0',
+  };
+  await writeFile(`${cardPath}/.card/metadata.yaml`, toYaml(metadata));
+  
+  // 写入 structure.yaml
+  const structure = {
+    structure: card.structure.map(bc => ({ id: bc.id, type: bc.type })),
+    manifest: {
+      card_count: card.structure.length,
+      resource_count: 0,
+      resources: [],
+    },
+  };
+  await writeFile(`${cardPath}/.card/structure.yaml`, toYaml(structure));
+  
+  // 写入 cover.html
+  const escapedName = card.metadata.name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const coverHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapedName}</title>
+  <style>
+    body { margin: 0; padding: 20px; font-family: system-ui, sans-serif; }
+    .card-name { font-size: 18px; font-weight: 500; color: #333; }
+  </style>
+</head>
+<body>
+  <div class="card-name">${escapedName}</div>
+</body>
+</html>`;
+  await writeFile(`${cardPath}/.card/cover.html`, coverHtml);
+  
+  // 写入每个基础卡片的配置
+  for (const baseCard of card.structure) {
+    const basicCardConfig = {
+      type: baseCard.type,
+      data: baseCard.config || {},
+    };
+    await writeFile(`${cardPath}/content/${baseCard.id}.yaml`, toYaml(basicCardConfig));
+  }
+  
+  console.log(`[SaveCard] 卡片已保存到工作区: ${cardPath}`);
+}
+
+/**
+ * 从工作区读取卡片文件夹结构
+ * 返回 Base64 编码的文件数据数组
+ */
+async function readCardFromWorkspace(cardPath: string): Promise<CardFileData[]> {
+  // 使用专门的 card-files API 读取卡片目录（包括 .card 隐藏目录）
+  const response = await fetch(`${DEV_FILE_SERVER}/card-files/${encodeURIComponent(cardPath)}`);
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: '读取失败' }));
+    throw new Error(`读取卡片目录失败: ${error.error || response.statusText}`);
+  }
+  
+  const data = await response.json();
+  return data.files || [];
+}
 
 /**
  * 格式化时间戳
@@ -222,43 +383,537 @@ function handleCoverSave(data: CoverData): void {
 }
 
 /**
+ * 检查文件服务器是否可用
+ */
+async function checkFileServer(): Promise<boolean> {
+  try {
+    const response = await fetch(`${DEV_FILE_SERVER}/status`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(2000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 将路径转换为文件服务器的相对路径
+ * 文件服务器根目录是 ProductFinishedProductTestingSpace
+ */
+function toServerPath(fullPath: string): string {
+  // 移除前导的虚拟路径前缀
+  let relativePath = fullPath;
+  if (fullPath.startsWith('/ProductFinishedProductTestingSpace/')) {
+    relativePath = fullPath.replace('/ProductFinishedProductTestingSpace/', '');
+  }
+  // URL 编码每个路径段
+  return relativePath.split('/').map(segment => encodeURIComponent(segment)).join('/');
+}
+
+/**
+ * 通过文件服务器写入文件（文本）
+ */
+async function writeFileToServer(filePath: string, content: string): Promise<void> {
+  const serverPath = toServerPath(filePath);
+  console.log('[Export] 写入文件:', serverPath);
+  const response = await fetch(`${DEV_FILE_SERVER}/file/${serverPath}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`写入文件失败: ${response.status} - ${error}`);
+  }
+}
+
+/**
+ * 通过文件服务器写入二进制文件
+ */
+async function writeBinaryFileToServer(filePath: string, data: Uint8Array): Promise<void> {
+  const serverPath = toServerPath(filePath);
+  console.log('[Export] 写入二进制文件:', serverPath, `(${data.length} bytes)`);
+  
+  // 将 Uint8Array 转换为 base64
+  let binary = '';
+  const len = data.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(data[i]);
+  }
+  const base64 = btoa(binary);
+  
+  const response = await fetch(`${DEV_FILE_SERVER}/file/${serverPath}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: base64, binary: true }),
+  });
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`写入二进制文件失败: ${response.status} - ${error}`);
+  }
+}
+
+/**
+ * 通过文件服务器创建目录
+ */
+async function mkdirOnServer(dirPath: string): Promise<void> {
+  const serverPath = toServerPath(dirPath);
+  console.log('[Export] 创建目录:', serverPath);
+  const response = await fetch(`${DEV_FILE_SERVER}/mkdir/${serverPath}`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    console.warn('[Export] 创建目录可能失败:', response.status);
+  }
+}
+
+/**
+ * 检查文件是否存在（通过文件服务器）
+ * @param filePath - 完整文件路径
+ * @returns 文件是否存在
+ */
+async function checkFileExistsOnServer(filePath: string): Promise<boolean> {
+  try {
+    const serverPath = toServerPath(filePath);
+    const response = await fetch(`${DEV_FILE_SERVER}/exists/${serverPath}`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(2000),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      return data.exists === true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 检查目录是否存在（通过文件服务器）
+ * @param dirPath - 完整目录路径
+ * @returns 目录是否存在
+ */
+async function checkDirectoryExistsOnServer(dirPath: string): Promise<boolean> {
+  try {
+    const serverPath = toServerPath(dirPath);
+    const response = await fetch(`${DEV_FILE_SERVER}/exists/${serverPath}`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(2000),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      return data.exists === true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 清理文件名中的非法字符
+ * @param name - 原始名称
+ * @returns 清理后的名称
+ */
+function sanitizeFileName(name: string): string {
+  return name
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    .trim();
+}
+
+/**
+ * 生成唯一文件名（检查重名并自动添加编号）
+ * @param baseName - 基础文件名（不含扩展名）
+ * @param extension - 扩展名（包含点）
+ * @param directory - 目标目录
+ * @returns 唯一的文件名和完整路径
+ */
+async function generateUniqueFileName(
+  baseName: string,
+  extension: string,
+  directory: string
+): Promise<{ fileName: string; fullPath: string }> {
+  const cleanBaseName = sanitizeFileName(baseName);
+  const separator = '_';
+  const maxAttempts = 1000;
+
+  // 首先尝试原始文件名
+  const originalFileName = `${cleanBaseName}${extension}`;
+  const originalPath = `${directory}/${originalFileName}`;
+
+  const exists = await checkFileExistsOnServer(originalPath);
+  if (!exists) {
+    return { fileName: originalFileName, fullPath: originalPath };
+  }
+
+  // 原始文件名已存在，尝试添加编号
+  for (let i = 1; i <= maxAttempts; i++) {
+    const numberedFileName = `${cleanBaseName}${separator}${i}${extension}`;
+    const numberedPath = `${directory}/${numberedFileName}`;
+    const numberedExists = await checkFileExistsOnServer(numberedPath);
+    if (!numberedExists) {
+      return { fileName: numberedFileName, fullPath: numberedPath };
+    }
+  }
+
+  // 超过最大尝试次数，使用时间戳作为后备方案
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const fallbackFileName = `${cleanBaseName}${separator}${timestamp}${extension}`;
+  return { fileName: fallbackFileName, fullPath: `${directory}/${fallbackFileName}` };
+}
+
+/**
+ * 生成唯一目录名（检查重名并自动添加编号）
+ * @param baseName - 基础目录名
+ * @param parentDirectory - 父目录
+ * @returns 唯一的目录名和完整路径
+ */
+async function generateUniqueDirectoryName(
+  baseName: string,
+  parentDirectory: string
+): Promise<{ directoryName: string; fullPath: string }> {
+  const cleanBaseName = sanitizeFileName(baseName);
+  const separator = '_';
+  const maxAttempts = 1000;
+
+  // 首先尝试原始目录名
+  const originalPath = `${parentDirectory}/${cleanBaseName}`;
+
+  const exists = await checkDirectoryExistsOnServer(originalPath);
+  if (!exists) {
+    return { directoryName: cleanBaseName, fullPath: originalPath };
+  }
+
+  // 原始目录名已存在，尝试添加编号
+  for (let i = 1; i <= maxAttempts; i++) {
+    const numberedName = `${cleanBaseName}${separator}${i}`;
+    const numberedPath = `${parentDirectory}/${numberedName}`;
+    const numberedExists = await checkDirectoryExistsOnServer(numberedPath);
+    if (!numberedExists) {
+      return { directoryName: numberedName, fullPath: numberedPath };
+    }
+  }
+
+  // 超过最大尝试次数，使用时间戳作为后备方案
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const fallbackName = `${cleanBaseName}${separator}${timestamp}`;
+  return { directoryName: fallbackName, fullPath: `${parentDirectory}/${fallbackName}` };
+}
+
+/**
+ * 将对象转换为 YAML 格式（简单实现）
+ */
+function toYaml(obj: Record<string, unknown>, indent = 0): string {
+  const spaces = '  '.repeat(indent);
+  let result = '';
+  
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === null || value === undefined) continue;
+    
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        result += `${spaces}${key}: []\n`;
+      } else if (typeof value[0] === 'object') {
+        result += `${spaces}${key}:\n`;
+        for (const item of value) {
+          result += `${spaces}-   ${toYaml(item as Record<string, unknown>, indent + 2).trim().replace(/\n/g, `\n${spaces}    `)}\n`;
+        }
+      } else {
+        result += `${spaces}${key}:\n`;
+        for (const item of value) {
+          result += `${spaces}- ${JSON.stringify(item)}\n`;
+        }
+      }
+    } else if (typeof value === 'object') {
+      result += `${spaces}${key}:\n${toYaml(value as Record<string, unknown>, indent + 1)}`;
+    } else if (typeof value === 'string') {
+      result += `${spaces}${key}: ${JSON.stringify(value)}\n`;
+    } else {
+      result += `${spaces}${key}: ${value}\n`;
+    }
+  }
+  
+  return result;
+}
+
+/**
  * 执行导出操作
  * @param format - 导出格式
  */
 async function handleExport(format: 'card' | 'html' | 'pdf' | 'image'): Promise<void> {
   if (exportStatus.value === 'exporting') return;
+  if (!cardInfo.value) {
+    exportStatus.value = 'error';
+    exportMessage.value = '卡片数据不存在';
+    return;
+  }
   
   exportStatus.value = 'exporting';
   exportProgress.value = 0;
   exportMessage.value = `正在导出为 ${format.toUpperCase()} 格式...`;
   
   try {
-    // TODO: 集成 ConversionAPI
-    // const conversionApi = new ConversionAPI(connector, logger, config);
-    // const result = await conversionApi.convert(cardInfo.value, format, {
-    //   onProgress: (progress) => {
-    //     exportProgress.value = progress.progress;
-    //     exportMessage.value = progress.currentStep || '';
-    //   }
-    // });
-    
-    // 模拟导出过程
-    for (let i = 0; i <= 100; i += 20) {
-      exportProgress.value = i;
-      await new Promise(resolve => setTimeout(resolve, 200));
+    // 检查文件服务器
+    const serverAvailable = await checkFileServer();
+    if (!serverAvailable) {
+      throw new Error('文件服务器不可用，请确保开发服务器正在运行');
     }
     
-    exportStatus.value = 'success';
-    exportMessage.value = '导出完成！';
+    exportProgress.value = 10;
     
-    // 3 秒后重置状态
-    setTimeout(() => {
-      if (exportStatus.value === 'success') {
-        exportStatus.value = 'idle';
-        exportProgress.value = 0;
-        exportMessage.value = '';
+    const cardName = cardInfo.value.metadata.name || '未命名卡片';
+    const cardId = props.cardId;
+    
+    if (format === 'card') {
+      // 导出为 .card 文件（ZIP 格式）
+      exportMessage.value = '创建卡片包...';
+      exportProgress.value = 20;
+      
+      // 使用 JSZip 创建 ZIP 文件
+      const zip = new JSZip();
+      
+      // 准备元数据
+      const metadata = {
+        card_id: cardId,
+        name: cardName,
+        created_at: cardInfo.value.metadata.created_at || new Date().toISOString(),
+        modified_at: new Date().toISOString(),
+        theme_id: cardInfo.value.metadata.theme || '薯片官方：默认主题',
+        tags: cardInfo.value.metadata.tags || [],
+        chips_standards_version: '1.0.0',
+      };
+      
+      // 准备结构信息
+      const structure = cardInfo.value.structure || {
+        structure: [],
+        manifest: { card_count: 0, resource_count: 0, resources: [] },
+      };
+      
+      // 准备封面 HTML
+      const coverHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    .card-name {
+      color: white;
+      font-size: 24px;
+      font-weight: 600;
+      text-align: center;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card-name">${cardName}</div>
+</body>
+</html>`;
+      
+      exportProgress.value = 40;
+      exportMessage.value = '添加文件到卡片包...';
+      
+      // 添加文件到 ZIP
+      zip.file('.card/metadata.yaml', toYaml(metadata));
+      zip.file('.card/structure.yaml', toYaml(structure));
+      zip.file('.card/cover.html', coverHtml);
+      
+      // 创建空的 content 和 cardcover 目录
+      zip.folder('content');
+      zip.folder('cardcover');
+      
+      exportProgress.value = 60;
+      exportMessage.value = '生成卡片文件...';
+      
+      // 生成 ZIP 文件
+      const zipData = await zip.generateAsync({
+        type: 'uint8array',
+        compression: 'STORE', // .card 文件使用存储模式（不压缩）
+      });
+      
+      exportProgress.value = 80;
+      exportMessage.value = '检查文件名并保存...';
+      
+      // 生成唯一文件名（使用卡片名称，重名时自动添加编号）
+      const { fileName, fullPath } = await generateUniqueFileName(cardName, '.card', EXPORT_DIR);
+      await writeBinaryFileToServer(fullPath, zipData);
+      
+      exportProgress.value = 100;
+      exportStatus.value = 'success';
+      exportMessage.value = `导出完成！保存至: ExternalEnvironment/${fileName}`;
+      
+    } else if (format === 'html') {
+      // HTML 导出 - 完整流程：保存 → 构建数据 → 传递给转换模块
+      exportMessage.value = '保存当前卡片...';
+      exportProgress.value = 5;
+      
+      // 1. 先保存当前卡片到工作区
+      const cardPath = cardInfo.value.filePath || cardId;
+      console.log('[Export] 步骤1: 保存卡片到工作区:', cardPath);
+      
+      try {
+        await saveCardToWorkspace(cardId, cardPath, cardInfo.value);
+        console.log('[Export] 卡片已保存到:', cardPath);
+      } catch (e) {
+        console.error('[Export] 保存卡片失败:', e);
+        throw new Error(`保存卡片失败: ${e instanceof Error ? e.message : '未知错误'}`);
       }
-    }, 3000);
+      
+      exportMessage.value = '读取卡片数据...';
+      exportProgress.value = 20;
+      
+      // 2. 从工作区读取卡片文件夹结构
+      console.log('[Export] 步骤2: 读取工作区卡片数据');
+      const cardFiles = await readCardFromWorkspace(cardPath);
+      console.log('[Export] 读取了', cardFiles.length, '个文件');
+      
+      // 3. 生成唯一目录名
+      const { directoryName } = await generateUniqueDirectoryName(cardName, EXPORT_DIR);
+      const outputPath = `ExternalEnvironment/${directoryName}`;
+      
+      exportMessage.value = '调用转换服务...';
+      exportProgress.value = 40;
+      
+      // 4. 将文件数据传递给转换服务（通过 FileConverter → CardtoHTMLPlugin）
+      console.log('[Export] 步骤3: 调用转换服务，传递', cardFiles.length, '个文件');
+      
+      const result = await conversionService.convertToHTML({
+        cardId: cardId,
+        cardFiles: cardFiles,  // 直接传递卡片文件数据
+        outputPath: outputPath,
+        includeAssets: true,
+        ...(cardInfo.value.metadata.theme && { themeId: cardInfo.value.metadata.theme }),
+      });
+      
+      exportProgress.value = 90;
+      
+      if (!result.success) {
+        console.error('[Export] HTML 转换失败:', result.error);
+        throw new Error(result.error || 'HTML 转换失败');
+      }
+      
+      console.log('[Export] HTML 转换成功:', result);
+      
+      exportProgress.value = 100;
+      exportStatus.value = 'success';
+      exportMessage.value = `导出完成！保存至: ${outputPath}/`;
+      
+    } else if (format === 'pdf') {
+      // PDF 导出 - 通过 HTML 转换模块生成页面，再转换为 PDF
+      exportMessage.value = '保存当前卡片...';
+      exportProgress.value = 10;
+
+      const cardPath = cardInfo.value.filePath || cardId;
+
+      try {
+        await saveCardToWorkspace(cardId, cardPath, cardInfo.value);
+      } catch (e) {
+        throw new Error(`保存卡片失败: ${e instanceof Error ? e.message : '未知错误'}`);
+      }
+
+      exportMessage.value = '读取卡片数据...';
+      exportProgress.value = 20;
+      const cardFiles = await readCardFromWorkspace(cardPath);
+
+      exportMessage.value = '检查文件名...';
+      exportProgress.value = 30;
+      const { fileName: pdfFileName } = await generateUniqueFileName(cardName, '.pdf', EXPORT_DIR);
+
+      exportProgress.value = 50;
+      exportMessage.value = '转换为 PDF...';
+
+      const outputPath = `ExternalEnvironment/${pdfFileName}`;
+      const result = await conversionService.convertToPDF({
+        cardId,
+        cardFiles,
+        outputPath,
+        includeAssets: true,
+        themeId: cardInfo.value.metadata.theme,
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '15mm', right: '15mm', bottom: '15mm', left: '15mm' },
+      });
+
+      exportProgress.value = 90;
+
+      if (!result.success) {
+        throw new Error(result.error || 'PDF 转换失败');
+      }
+
+      exportProgress.value = 100;
+      exportStatus.value = 'success';
+      exportMessage.value = `导出完成！保存至: ExternalEnvironment/${pdfFileName}`;
+      
+    } else if (format === 'image') {
+      // 图片导出 - 通过 HTML 转换模块生成页面，再转换为图片
+      exportMessage.value = '保存当前卡片...';
+      exportProgress.value = 10;
+
+      const cardPath = cardInfo.value.filePath || cardId;
+
+      try {
+        await saveCardToWorkspace(cardId, cardPath, cardInfo.value);
+      } catch (e) {
+        throw new Error(`保存卡片失败: ${e instanceof Error ? e.message : '未知错误'}`);
+      }
+
+      exportMessage.value = '读取卡片数据...';
+      exportProgress.value = 20;
+      const cardFiles = await readCardFromWorkspace(cardPath);
+
+      exportMessage.value = '检查文件名...';
+      exportProgress.value = 30;
+      const { fileName: imageFileName } = await generateUniqueFileName(cardName, '.png', EXPORT_DIR);
+
+      exportProgress.value = 50;
+      exportMessage.value = '转换为图片...';
+
+      const outputPath = `ExternalEnvironment/${imageFileName}`;
+      const result = await conversionService.convertToImage({
+        cardId,
+        cardFiles,
+        outputPath,
+        includeAssets: true,
+        themeId: cardInfo.value.metadata.theme,
+        width: 800,
+        height: 600,
+        scale: 2,
+        fullPage: true,
+        type: 'png',
+      });
+
+      exportProgress.value = 90;
+
+      if (!result.success) {
+        throw new Error(result.error || '图片转换失败');
+      }
+
+      exportProgress.value = 100;
+      exportStatus.value = 'success';
+      exportMessage.value = `导出完成！保存至: ExternalEnvironment/${imageFileName}`;
+    }
+    
+    // 成功后 5 秒重置状态
+    if (exportStatus.value === 'success') {
+      setTimeout(() => {
+        if (exportStatus.value === 'success') {
+          exportStatus.value = 'idle';
+          exportProgress.value = 0;
+          exportMessage.value = '';
+        }
+      }, 5000);
+    }
   } catch (error) {
     exportStatus.value = 'error';
     exportMessage.value = `导出失败: ${error instanceof Error ? error.message : '未知错误'}`;

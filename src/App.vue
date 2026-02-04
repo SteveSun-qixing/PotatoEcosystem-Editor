@@ -10,6 +10,7 @@ import { InfiniteCanvas, Workbench } from '@/layouts';
 import { useEditorStore, useUIStore, useCardStore } from '@/core/state';
 import { useWindowManager } from '@/core/window-manager';
 import { useWorkspaceService } from '@/core/workspace-service';
+import { useCardInitializer } from '@/core/card-initializer';
 import { FileManager } from '@/components/file-manager';
 import { EditPanel } from '@/components/edit-panel';
 import { CardBoxLibrary, type DragData } from '@/components/card-box-library';
@@ -21,6 +22,11 @@ const uiStore = useUIStore();
 const cardStore = useCardStore();
 const windowManager = useWindowManager();
 const workspaceService = useWorkspaceService();
+
+/** 卡片初始化器 - 用于写入真实文件 */
+const cardInitializer = useCardInitializer({
+  workspaceRoot: '/ProductFinishedProductTestingSpace/TestWorkspace',
+});
 
 /** 应用状态 */
 const isReady = ref(false);
@@ -107,10 +113,22 @@ function updateWindowSize(): void {
 }
 
 /**
- * 生成唯一 ID
+ * 生成唯一 ID（10 位 62 进制，用于内部窗口等）
  */
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+/**
+ * 生成 10 位 62 进制卡片 ID（符合生态标准）
+ */
+function generateCardId62(): string {
+  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  let id = '';
+  for (let i = 0; i < 10; i++) {
+    id += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return id;
 }
 
 /**
@@ -144,12 +162,13 @@ async function createCompositeCard(
 ): Promise<void> {
   cardCounter++;
   const cardName = `未命名卡片 ${cardCounter}`;
-  const cardId = generateId();
+  // 使用符合生态标准的 10 位 62 进制 ID
+  const cardId = generateCardId62();
   const windowId = `window-${cardId}`;
   const timestamp = new Date().toISOString();
 
-  // 创建基础卡片数据
-  const baseCardId = generateId();
+  // 创建基础卡片数据（也使用 62 进制 ID）
+  const baseCardId = generateCardId62();
   const baseCard = {
     id: baseCardId,
     type: data.typeId, // 基础卡片类型 ID（如 'rich-text'）
@@ -204,6 +223,25 @@ async function createCompositeCard(
   // 创建工作区文件记录（使用相同的 cardId 确保数据同步）
   await workspaceService.createCard(cardName, { type: data.typeId }, cardId);
 
+  // 写入真实文件到工作目录
+  console.log('[App] 准备写入卡片文件, cardId:', cardId, 'cardName:', cardName, 'baseCardId:', baseCardId);
+  try {
+    // createCard(cardId, name, initialBasicCard)
+    console.log('[App] 调用 cardInitializer.createCard...');
+    const result = await cardInitializer.createCard(cardId, cardName, {
+      type: data.typeId,
+      id: baseCardId,
+    });
+    console.log('[App] createCard 返回结果:', JSON.stringify(result, null, 2));
+    if (result.success) {
+      console.log('[App] ✅ 卡片文件已写入:', result.cardPath, '文件:', result.createdFiles);
+    } else {
+      console.warn('[App] ❌ 卡片创建失败:', result.error, '错误码:', result.errorCode);
+    }
+  } catch (error) {
+    console.error('[App] ❌ 写入卡片文件异常:', error);
+  }
+
   console.log('[App] 已创建复合卡片:', cardName, 'ID:', cardId, '包含基础卡片:', data.name);
 }
 
@@ -248,6 +286,19 @@ onMounted(async () => {
 
     // 初始化工具窗口到 uiStore
     initializeToolWindows();
+
+    // 检测文件服务器连接状态
+    try {
+      const response = await fetch('http://localhost:3456/status', { 
+        method: 'GET',
+        signal: AbortSignal.timeout(2000) 
+      });
+      if (response.ok) {
+        console.log('[Chips Editor] ✅ 文件服务器已连接，卡片将保存到工作目录');
+      }
+    } catch {
+      console.log('[Chips Editor] 📝 运行于内存模式（文件服务器未启动）');
+    }
 
     // 模拟初始化延迟
     await new Promise((resolve) => setTimeout(resolve, 300));

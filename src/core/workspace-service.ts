@@ -128,23 +128,32 @@ export function createWorkspaceService(events?: EventEmitter): WorkspaceService 
   }
 
   /**
+   * 开发阶段工作区路径
+   * 
+   * 开发阶段：指向项目内的测试工作空间
+   * 生产阶段：由用户在软件初始化时选择，可在设置中调整
+   */
+  const DEV_WORKSPACE_PATH = '/ProductFinishedProductTestingSpace/TestWorkspace';
+
+  /**
    * 初始化工作区
    * 
-   * TODO: 实际实现应该：
-   * 1. 获取应用数据目录路径
-   * 2. 检查工作区目录是否存在，不存在则创建
-   * 3. 读取现有文件列表
+   * 开发阶段：使用固定的测试工作空间路径
+   * 生产阶段：
+   * 1. 首次启动让用户选择工作区位置
+   * 2. 通过 Electron IPC 获取/设置路径
+   * 3. 可在设置中调整
    */
   async function initialize(): Promise<void> {
     if (state.value.initialized) return;
 
     try {
-      // TODO: 通过 Electron IPC 获取应用数据目录
-      // const appDataPath = await window.electronAPI?.app.getPath('userData');
-      // state.value.rootPath = `${appDataPath}/workspace`;
-
-      // 模拟初始化
-      state.value.rootPath = '/chips-workspace';
+      // 开发阶段：使用测试工作空间
+      // 生产阶段 TODO: 
+      // 1. 检查是否有保存的用户选择路径
+      // 2. 如果没有，弹出对话框让用户选择
+      // 3. 通过 Foundation 的 ElectronFramework 获取/保存路径
+      state.value.rootPath = DEV_WORKSPACE_PATH;
       state.value.files = [];
       state.value.initialized = true;
 

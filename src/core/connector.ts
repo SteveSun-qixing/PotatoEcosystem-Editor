@@ -184,8 +184,150 @@ function createMockSDK(): MockSDKInstance {
           },
         };
       },
-      async save(_path: string, _card: MockCard): Promise<void> {
-        await new Promise((resolve) => setTimeout(resolve, 50));
+      async save(path: string, card: MockCard): Promise<void> {
+        // 开发阶段：通过文件服务器保存卡片
+        const DEV_FILE_SERVER = 'http://localhost:3456';
+        
+        try {
+          // 检查文件服务器是否可用
+          const statusRes = await fetch(`${DEV_FILE_SERVER}/status`, { 
+            signal: AbortSignal.timeout(2000) 
+          });
+          if (!statusRes.ok) {
+            console.warn('[MockSDK] 开发文件服务器不可用，跳过文件保存');
+            return;
+          }
+        } catch {
+          console.warn('[MockSDK] 无法连接开发文件服务器，跳过文件保存');
+          return;
+        }
+        
+        // YAML 序列化辅助函数
+        const toYaml = (obj: unknown, indent = 0): string => {
+          const spaces = '  '.repeat(indent);
+          if (obj === null || obj === undefined) return 'null';
+          if (typeof obj === 'string') {
+            if (obj.includes('\n') || obj.includes(':') || obj.includes('#') || 
+                obj.includes("'") || obj.includes('"') || obj.startsWith(' ') ||
+                obj.endsWith(' ') || obj === '') {
+              return `"${obj.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
+            }
+            return obj;
+          }
+          if (typeof obj === 'number' || typeof obj === 'boolean') return String(obj);
+          if (Array.isArray(obj)) {
+            if (obj.length === 0) return '[]';
+            return obj.map(item => {
+              if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+                const entries = Object.entries(item as Record<string, unknown>);
+                if (entries.length === 0) return `${spaces}- {}`;
+                const [firstKey, firstVal] = entries[0];
+                const firstValue = typeof firstVal === 'object' && firstVal !== null
+                  ? `\n${toYaml(firstVal, indent + 2)}`
+                  : ` ${toYaml(firstVal, 0)}`;
+                const firstLine = `${spaces}- ${firstKey}:${firstValue}`;
+                const restLines = entries.slice(1).map(([key, value]) => {
+                  if (typeof value === 'object' && value !== null) {
+                    if (Array.isArray(value) && value.length === 0) return `${spaces}  ${key}: []`;
+                    if (!Array.isArray(value) && Object.keys(value).length === 0) return `${spaces}  ${key}: {}`;
+                    return `${spaces}  ${key}:\n${toYaml(value, indent + 2)}`;
+                  }
+                  return `${spaces}  ${key}: ${toYaml(value, 0)}`;
+                });
+                return [firstLine, ...restLines].join('\n');
+              }
+              return `${spaces}- ${toYaml(item, 0)}`;
+            }).join('\n');
+          }
+          if (typeof obj === 'object') {
+            const entries = Object.entries(obj as Record<string, unknown>);
+            if (entries.length === 0) return '{}';
+            return entries.map(([key, value]) => {
+              if (typeof value === 'object' && value !== null) {
+                if (Array.isArray(value) && value.length === 0) return `${spaces}${key}: []`;
+                if (!Array.isArray(value) && Object.keys(value).length === 0) return `${spaces}${key}: {}`;
+                return `${spaces}${key}:\n${toYaml(value, indent + 1)}`;
+              }
+              return `${spaces}${key}: ${toYaml(value, indent)}`;
+            }).join('\n');
+          }
+          return String(obj);
+        };
+        
+        // 写入文件辅助函数
+        const writeFile = async (filePath: string, content: string) => {
+          await fetch(`${DEV_FILE_SERVER}/file/${encodeURIComponent(filePath)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content }),
+          });
+        };
+        
+        // 创建目录辅助函数
+        const mkdir = async (dirPath: string) => {
+          await fetch(`${DEV_FILE_SERVER}/mkdir/${encodeURIComponent(dirPath)}`, {
+            method: 'POST',
+          });
+        };
+        
+        try {
+          // 创建目录结构
+          await mkdir(path);
+          await mkdir(`${path}/.card`);
+          await mkdir(`${path}/content`);
+          await mkdir(`${path}/cardcover`);
+          
+          // 写入 metadata.yaml
+          const metadata = {
+            card_id: card.id,
+            name: card.metadata.name,
+            created_at: card.metadata.created_at,
+            modified_at: card.metadata.modified_at,
+            theme_id: card.metadata.theme || '薯片官方：默认主题',
+            tags: card.metadata.tags || [],
+            chips_standards_version: '1.0.0',
+          };
+          await writeFile(`${path}/.card/metadata.yaml`, toYaml(metadata));
+          
+          // 写入 structure.yaml
+          const structure = {
+            structure: card.structure.structure,
+            manifest: card.structure.manifest,
+          };
+          await writeFile(`${path}/.card/structure.yaml`, toYaml(structure));
+          
+          // 写入 cover.html
+          const escapedName = card.metadata.name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          const coverHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapedName}</title>
+  <style>
+    body { margin: 0; padding: 20px; font-family: system-ui, sans-serif; }
+    .card-name { font-size: 18px; font-weight: 500; color: #333; }
+  </style>
+</head>
+<body>
+  <div class="card-name">${escapedName}</div>
+</body>
+</html>`;
+          await writeFile(`${path}/.card/cover.html`, coverHtml);
+          
+          // 写入每个基础卡片的配置
+          for (const baseCard of card.structure.structure) {
+            const basicCardConfig = {
+              type: baseCard.type,
+              data: {},
+            };
+            await writeFile(`${path}/content/${baseCard.id}.yaml`, toYaml(basicCardConfig));
+          }
+          
+          console.log(`[MockSDK] 卡片已保存: ${path}`);
+        } catch (e) {
+          console.error('[MockSDK] 保存卡片失败:', e);
+        }
       },
       async delete(_idOrPath: string): Promise<void> {
         await new Promise((resolve) => setTimeout(resolve, 50));

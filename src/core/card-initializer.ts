@@ -271,11 +271,33 @@ function toYaml(obj: unknown, indent = 0): string {
     }
     return obj.map(item => {
       if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
-        const itemYaml = toYaml(item, indent + 1);
-        const lines = itemYaml.split('\n');
-        return `${spaces}- ${lines[0]}\n${lines.slice(1).map(l => `${spaces}  ${l}`).join('\n')}`.trim();
+        // 对象数组项：第一个属性紧跟 -，后续属性对齐
+        const entries = Object.entries(item as Record<string, unknown>);
+        if (entries.length === 0) {
+          return `${spaces}- {}`;
+        }
+        const firstEntry = entries[0];
+        const firstValue = typeof firstEntry[1] === 'object' && firstEntry[1] !== null
+          ? `\n${toYaml(firstEntry[1], indent + 2)}`
+          : ` ${toYaml(firstEntry[1], 0)}`;
+        const firstLine = `${spaces}- ${firstEntry[0]}:${firstValue}`;
+        
+        const restLines = entries.slice(1).map(([key, value]) => {
+          if (typeof value === 'object' && value !== null) {
+            if (Array.isArray(value) && value.length === 0) {
+              return `${spaces}  ${key}: []`;
+            }
+            if (!Array.isArray(value) && Object.keys(value).length === 0) {
+              return `${spaces}  ${key}: {}`;
+            }
+            return `${spaces}  ${key}:\n${toYaml(value, indent + 2)}`;
+          }
+          return `${spaces}  ${key}: ${toYaml(value, 0)}`;
+        });
+        
+        return [firstLine, ...restLines].join('\n');
       }
-      return `${spaces}- ${toYaml(item, indent + 1)}`;
+      return `${spaces}- ${toYaml(item, 0)}`;
     }).join('\n');
   }
   
@@ -371,6 +393,33 @@ export interface CardInitializer {
  * );
  * ```
  */
+/**
+ * 开发文件服务器地址
+ * 运行 scripts/dev-file-server.ts 后可用
+ */
+const DEV_FILE_SERVER = 'http://localhost:3456';
+
+/**
+ * 检查开发文件服务器是否可用
+ * 每次都重新检查，不缓存结果（因为服务器可能后启动）
+ */
+async function checkDevFileServer(): Promise<boolean> {
+  try {
+    const response = await fetch(`${DEV_FILE_SERVER}/status`, { 
+      method: 'GET',
+      signal: AbortSignal.timeout(1000) 
+    });
+    const available = response.ok;
+    if (available) {
+      console.log('[CardInitializer] Dev file server is available');
+    }
+    return available;
+  } catch (e) {
+    console.log('[CardInitializer] Dev file server not available:', e);
+    return false;
+  }
+}
+
 export function createCardInitializer(
   options: CardInitOptions,
   events?: EventEmitter
@@ -380,20 +429,46 @@ export function createCardInitializer(
   const defaultThemeId = options.defaultThemeId || DEFAULT_THEME_ID;
 
   /**
+   * 将生态内路径转换为相对路径（用于开发文件服务器）
+   * 并进行 URL 安全编码（保留斜杠）
+   */
+  function toRelativePath(fullPath: string): string {
+    // 从 /ProductFinishedProductTestingSpace/TestWorkspace/xxx 提取 xxx
+    const workspacePrefix = '/ProductFinishedProductTestingSpace/TestWorkspace';
+    let relativePath = fullPath;
+    if (fullPath.startsWith(workspacePrefix)) {
+      relativePath = fullPath.slice(workspacePrefix.length + 1); // +1 去掉开头的 /
+    }
+    // 对每个路径段单独编码，保留斜杠
+    return relativePath.split('/').map(segment => encodeURIComponent(segment)).join('/');
+  }
+
+  /**
    * 通过 SDK 创建目录
    * @param path - 目录路径
    */
   async function createDirectory(path: string): Promise<void> {
-    // TODO: 通过 SDK 调用内核服务
-    // 目前使用占位实现，实际需要通过 Core.request 调用
+    console.log(`[CardInitializer] Creating directory: ${path}`);
+    
+    // 开发阶段：尝试使用本地文件服务器
+    if (await checkDevFileServer()) {
+      try {
+        const relativePath = toRelativePath(path);
+        await fetch(`${DEV_FILE_SERVER}/mkdir/${relativePath}`, {
+          method: 'POST',
+        });
+        console.log(`[CardInitializer] Directory created via dev server: ${relativePath}`);
+      } catch (e) {
+        console.warn('[CardInitializer] Dev file server failed:', e);
+      }
+    }
+    
+    // 生产阶段 TODO: 通过 SDK 调用内核服务
     // await sdk.request({
     //   service: 'file',
     //   method: 'createDirectory',
     //   payload: { path }
     // });
-    
-    // 临时模拟实现 - 在实际集成时替换为 SDK 调用
-    console.log(`[CardInitializer] Creating directory: ${path}`);
   }
 
   /**
@@ -402,15 +477,29 @@ export function createCardInitializer(
    * @param content - 文件内容
    */
   async function writeFile(path: string, content: string): Promise<void> {
-    // TODO: 通过 SDK 调用内核服务
+    console.log(`[CardInitializer] Writing file: ${path}`);
+    
+    // 开发阶段：尝试使用本地文件服务器
+    if (await checkDevFileServer()) {
+      try {
+        const relativePath = toRelativePath(path);
+        await fetch(`${DEV_FILE_SERVER}/file/${relativePath}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content }),
+        });
+        console.log(`[CardInitializer] File written via dev server: ${relativePath}`);
+      } catch (e) {
+        console.warn('[CardInitializer] Dev file server failed:', e);
+      }
+    }
+    
+    // 生产阶段 TODO: 通过 SDK 调用内核服务
     // await sdk.request({
     //   service: 'file',
     //   method: 'write',
     //   payload: { path, content }
     // });
-    
-    // 临时模拟实现 - 在实际集成时替换为 SDK 调用
-    console.log(`[CardInitializer] Writing file: ${path}`);
   }
 
   /**
@@ -418,7 +507,20 @@ export function createCardInitializer(
    * @param path - 路径
    */
   async function exists(path: string): Promise<boolean> {
-    // TODO: 通过 SDK 调用内核服务
+    // 开发阶段：尝试使用本地文件服务器
+    if (await checkDevFileServer()) {
+      try {
+        const relativePath = toRelativePath(path);
+        const response = await fetch(`${DEV_FILE_SERVER}/file/${relativePath}`, {
+          method: 'GET',
+        });
+        return response.ok;
+      } catch {
+        return false;
+      }
+    }
+    
+    // 生产阶段 TODO: 通过 SDK 调用内核服务
     // const response = await sdk.request({
     //   service: 'file',
     //   method: 'exists',
@@ -426,7 +528,6 @@ export function createCardInitializer(
     // });
     // return response.data;
     
-    // 临时模拟实现 - 假设不存在
     return false;
   }
 
