@@ -65,44 +65,22 @@ export interface ConvertResult {
  * PDF 转换选项
  */
 export interface ConvertPDFOptions {
-  /** HTML 内容（优先使用） */
-  html?: string;
-  /** 卡片 ID */
-  cardId?: string;
-  /** 卡片文件数据（优先使用） */
-  cardFiles?: CardFileData[];
-  /** 卡片路径（备用） */
-  cardPath?: string;
-  /** 是否包含资源文件 */
-  includeAssets?: boolean;
-  /** 主题 ID */
-  themeId?: string;
+  /** HTML 内容 */
+  html: string;
   /** 输出路径 */
   outputPath: string;
   /** 页面格式 */
   format?: 'A4' | 'Letter';
   /** 是否打印背景 */
   printBackground?: boolean;
-  /** 页边距 */
-  margin?: { top?: string; right?: string; bottom?: string; left?: string };
 }
 
 /**
  * 图片转换选项
  */
 export interface ConvertImageOptions {
-  /** HTML 内容（优先使用） */
-  html?: string;
-  /** 卡片 ID */
-  cardId?: string;
-  /** 卡片文件数据（优先使用） */
-  cardFiles?: CardFileData[];
-  /** 卡片路径（备用） */
-  cardPath?: string;
-  /** 是否包含资源文件 */
-  includeAssets?: boolean;
-  /** 主题 ID */
-  themeId?: string;
+  /** HTML 内容 */
+  html: string;
   /** 输出路径 */
   outputPath: string;
   /** 图片宽度 */
@@ -113,8 +91,6 @@ export interface ConvertImageOptions {
   scale?: number;
   /** 图片类型 */
   type?: 'png' | 'jpeg';
-  /** 是否截取完整页面 */
-  fullPage?: boolean;
 }
 
 /**
@@ -270,33 +246,17 @@ export class ConversionService {
 
   private async _convertPDFViaHTTP(options: ConvertPDFOptions): Promise<ConvertResult> {
     try {
-      const requestBody: Record<string, unknown> = {
-        outputPath: options.outputPath,
-        options: {
-          format: options.format || 'A4',
-          printBackground: options.printBackground ?? true,
-          margin: options.margin,
-          includeAssets: options.includeAssets,
-          themeId: options.themeId,
-        },
-      };
-
-      if (options.html) {
-        requestBody.html = options.html;
-      }
-
-      if (options.cardFiles && options.cardFiles.length > 0) {
-        requestBody.cardId = options.cardId;
-        requestBody.cardFiles = options.cardFiles;
-      } else if (options.cardPath) {
-        requestBody.cardId = options.cardId;
-        requestBody.cardPath = options.cardPath;
-      }
-
       const response = await fetch(`${DEV_SERVER_URL}/convert/pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          html: options.html,
+          outputPath: options.outputPath,
+          options: {
+            format: options.format || 'A4',
+            printBackground: options.printBackground ?? true,
+          },
+        }),
       });
 
       const data = await response.json();
@@ -316,35 +276,19 @@ export class ConversionService {
 
   private async _convertImageViaHTTP(options: ConvertImageOptions): Promise<ConvertResult> {
     try {
-      const requestBody: Record<string, unknown> = {
-        outputPath: options.outputPath,
-        options: {
-          width: options.width,
-          height: options.height,
-          scale: options.scale,
-          type: options.type,
-          fullPage: options.fullPage,
-          includeAssets: options.includeAssets,
-          themeId: options.themeId,
-        },
-      };
-
-      if (options.html) {
-        requestBody.html = options.html;
-      }
-
-      if (options.cardFiles && options.cardFiles.length > 0) {
-        requestBody.cardId = options.cardId;
-        requestBody.cardFiles = options.cardFiles;
-      } else if (options.cardPath) {
-        requestBody.cardId = options.cardId;
-        requestBody.cardPath = options.cardPath;
-      }
-
       const response = await fetch(`${DEV_SERVER_URL}/convert/image`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          html: options.html,
+          outputPath: options.outputPath,
+          options: {
+            width: options.width,
+            height: options.height,
+            scale: options.scale,
+            type: options.type,
+          },
+        }),
       });
 
       const data = await response.json();

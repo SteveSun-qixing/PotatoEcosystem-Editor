@@ -52,56 +52,6 @@ for (const dir of ensureDirs) {
   }
 }
 
-type IncomingCardFile = { path: string; content: string };
-
-const buildCardFileMap = (
-  inputCardFiles?: IncomingCardFile[],
-  cardPath?: string
-): Map<string, Uint8Array> => {
-  const cardFiles = new Map<string, Uint8Array>();
-
-  if (inputCardFiles && Array.isArray(inputCardFiles) && inputCardFiles.length > 0) {
-    for (const file of inputCardFiles) {
-      if (file.path && file.content) {
-        const buffer = Buffer.from(file.content, 'base64');
-        cardFiles.set(file.path, new Uint8Array(buffer));
-      }
-    }
-    return cardFiles;
-  }
-
-  if (!cardPath) {
-    return cardFiles;
-  }
-
-  const fullCardPath = path.join(WORKSPACE_ROOT, cardPath);
-  if (!fullCardPath.startsWith(WORKSPACE_ROOT)) {
-    throw new Error('Access denied: cardPath');
-  }
-
-  if (!fs.existsSync(fullCardPath)) {
-    throw new Error(`Card not found: ${cardPath}`);
-  }
-
-  const readDirRecursive = (dirPath: string, prefix: string = '') => {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    for (const entry of entries) {
-      const entryPath = path.join(dirPath, entry.name);
-      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
-
-      if (entry.isDirectory()) {
-        readDirRecursive(entryPath, relativePath);
-      } else {
-        const content = fs.readFileSync(entryPath);
-        cardFiles.set(relativePath, new Uint8Array(content));
-      }
-    }
-  };
-
-  readDirRecursive(fullCardPath);
-  return cardFiles;
-};
-
 const server = http.createServer(async (req, res) => {
   // CORS 头
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -330,11 +280,11 @@ const server = http.createServer(async (req, res) => {
       req.on('end', async () => {
         try {
           const data = JSON.parse(body);
-          const { html, outputPath, options = {}, cardFiles: inputCardFiles, cardPath } = data;
+          const { html, outputPath, options = {} } = data;
           
-          if (!outputPath) {
+          if (!html || !outputPath) {
             res.writeHead(400);
-            res.end(JSON.stringify({ error: 'Missing outputPath' }));
+            res.end(JSON.stringify({ error: 'Missing html or outputPath' }));
             return;
           }
           
@@ -351,49 +301,10 @@ const server = http.createServer(async (req, res) => {
             fs.mkdirSync(outputDir, { recursive: true });
           }
           
-          let tempHtmlPath = '';
-          let tempDir: string | null = null;
-
-          if (html) {
-            // 兼容旧流程：直接使用传入的 HTML
-            tempHtmlPath = path.join(WORKSPACE_ROOT, `.temp-${Date.now()}.html`);
-            fs.writeFileSync(tempHtmlPath, html, 'utf-8');
-            console.log(`[DEV-FS] Created temp HTML: ${tempHtmlPath}`);
-          } else {
-            // 新流程：先调用 HTML 转换模块
-            const cardFiles = buildCardFileMap(inputCardFiles, cardPath);
-            if (cardFiles.size === 0) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'Missing html or cardFiles/cardPath' }));
-              return;
-            }
-
-            tempDir = path.join(WORKSPACE_ROOT, `.temp-html-${Date.now()}`);
-            fs.mkdirSync(tempDir, { recursive: true });
-
-            console.log(`[DEV-FS] 先生成 HTML 再转换 PDF...`);
-            const conversionResult = await fileConverter.convert(
-              {
-                type: 'files',
-                files: cardFiles,
-                fileType: 'card',
-              },
-              'html-directory',
-              {
-                outputPath: tempDir,
-                includeAssets: options.includeAssets !== false,
-                themeId: options.themeId,
-              }
-            );
-
-            if (!conversionResult.success) {
-              res.writeHead(500);
-              res.end(JSON.stringify({ error: conversionResult.error?.message || 'HTML 转换失败' }));
-              return;
-            }
-
-            tempHtmlPath = path.join(tempDir, 'index.html');
-          }
+          // 创建临时 HTML 文件
+          const tempHtmlPath = path.join(WORKSPACE_ROOT, `.temp-${Date.now()}.html`);
+          fs.writeFileSync(tempHtmlPath, html, 'utf-8');
+          console.log(`[DEV-FS] Created temp HTML: ${tempHtmlPath}`);
           
           try {
             // 使用 Puppeteer 转换（动态导入）
@@ -422,13 +333,9 @@ const server = http.createServer(async (req, res) => {
             res.end(JSON.stringify({ success: true, path: outputPath }));
           } finally {
             // 删除临时文件
-            if (tempHtmlPath && fs.existsSync(tempHtmlPath)) {
+            if (fs.existsSync(tempHtmlPath)) {
               fs.unlinkSync(tempHtmlPath);
               console.log(`[DEV-FS] Cleaned temp HTML: ${tempHtmlPath}`);
-            }
-            if (tempDir && fs.existsSync(tempDir)) {
-              fs.rmSync(tempDir, { recursive: true, force: true });
-              console.log(`[DEV-FS] Cleaned temp directory: ${tempDir}`);
             }
           }
         } catch (e) {
@@ -447,11 +354,11 @@ const server = http.createServer(async (req, res) => {
       req.on('end', async () => {
         try {
           const data = JSON.parse(body);
-          const { html, outputPath, options = {}, cardFiles: inputCardFiles, cardPath } = data;
+          const { html, outputPath, options = {} } = data;
           
-          if (!outputPath) {
+          if (!html || !outputPath) {
             res.writeHead(400);
-            res.end(JSON.stringify({ error: 'Missing outputPath' }));
+            res.end(JSON.stringify({ error: 'Missing html or outputPath' }));
             return;
           }
           
@@ -468,47 +375,10 @@ const server = http.createServer(async (req, res) => {
             fs.mkdirSync(outputDir, { recursive: true });
           }
           
-          let tempHtmlPath = '';
-          let tempDir: string | null = null;
-
-          if (html) {
-            tempHtmlPath = path.join(WORKSPACE_ROOT, `.temp-${Date.now()}.html`);
-            fs.writeFileSync(tempHtmlPath, html, 'utf-8');
-            console.log(`[DEV-FS] Created temp HTML: ${tempHtmlPath}`);
-          } else {
-            const cardFiles = buildCardFileMap(inputCardFiles, cardPath);
-            if (cardFiles.size === 0) {
-              res.writeHead(400);
-              res.end(JSON.stringify({ error: 'Missing html or cardFiles/cardPath' }));
-              return;
-            }
-
-            tempDir = path.join(WORKSPACE_ROOT, `.temp-html-${Date.now()}`);
-            fs.mkdirSync(tempDir, { recursive: true });
-
-            console.log(`[DEV-FS] 先生成 HTML 再转换图片...`);
-            const conversionResult = await fileConverter.convert(
-              {
-                type: 'files',
-                files: cardFiles,
-                fileType: 'card',
-              },
-              'html-directory',
-              {
-                outputPath: tempDir,
-                includeAssets: options.includeAssets !== false,
-                themeId: options.themeId,
-              }
-            );
-
-            if (!conversionResult.success) {
-              res.writeHead(500);
-              res.end(JSON.stringify({ error: conversionResult.error?.message || 'HTML 转换失败' }));
-              return;
-            }
-
-            tempHtmlPath = path.join(tempDir, 'index.html');
-          }
+          // 创建临时 HTML 文件
+          const tempHtmlPath = path.join(WORKSPACE_ROOT, `.temp-${Date.now()}.html`);
+          fs.writeFileSync(tempHtmlPath, html, 'utf-8');
+          console.log(`[DEV-FS] Created temp HTML: ${tempHtmlPath}`);
           
           try {
             // 使用 Puppeteer 转换（动态导入）
@@ -543,13 +413,9 @@ const server = http.createServer(async (req, res) => {
             res.end(JSON.stringify({ success: true, path: outputPath }));
           } finally {
             // 删除临时文件
-            if (tempHtmlPath && fs.existsSync(tempHtmlPath)) {
+            if (fs.existsSync(tempHtmlPath)) {
               fs.unlinkSync(tempHtmlPath);
               console.log(`[DEV-FS] Cleaned temp HTML: ${tempHtmlPath}`);
-            }
-            if (tempDir && fs.existsSync(tempDir)) {
-              fs.rmSync(tempDir, { recursive: true, force: true });
-              console.log(`[DEV-FS] Cleaned temp directory: ${tempDir}`);
             }
           }
         } catch (e) {
@@ -596,17 +462,54 @@ const server = http.createServer(async (req, res) => {
           }
           
           // 构建卡片文件映射
-          let cardFiles: Map<string, Uint8Array>;
-          try {
-            cardFiles = buildCardFileMap(inputCardFiles, cardPath);
-          } catch (error) {
-            const message = error instanceof Error ? error.message : '读取卡片文件失败';
-            res.writeHead(403);
-            res.end(JSON.stringify({ error: message }));
-            return;
+          const cardFiles = new Map<string, Uint8Array>();
+          
+          if (inputCardFiles && Array.isArray(inputCardFiles) && inputCardFiles.length > 0) {
+            // 方式1：编辑器直接传递卡片数据（推荐）
+            console.log(`[DEV-FS] 使用编辑器传递的卡片数据...`);
+            for (const file of inputCardFiles) {
+              if (file.path && file.content) {
+                // Base64 解码
+                const buffer = Buffer.from(file.content, 'base64');
+                cardFiles.set(file.path, new Uint8Array(buffer));
+              }
+            }
+            console.log(`[DEV-FS] 接收了 ${cardFiles.size} 个文件（编辑器传递）`);
+          } else if (cardPath) {
+            // 方式2：从文件系统读取（备用）
+            console.log(`[DEV-FS] 从文件系统读取: ${cardPath}`);
+            const fullCardPath = path.join(WORKSPACE_ROOT, cardPath);
+            
+            if (!fullCardPath.startsWith(WORKSPACE_ROOT)) {
+              res.writeHead(403);
+              res.end(JSON.stringify({ error: 'Access denied: cardPath' }));
+              return;
+            }
+            
+            if (!fs.existsSync(fullCardPath)) {
+              res.writeHead(404);
+              res.end(JSON.stringify({ error: `Card not found: ${cardPath}` }));
+              return;
+            }
+            
+            const readDirRecursive = (dirPath: string, prefix: string = '') => {
+              const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+              for (const entry of entries) {
+                const entryPath = path.join(dirPath, entry.name);
+                const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+                
+                if (entry.isDirectory()) {
+                  readDirRecursive(entryPath, relativePath);
+                } else {
+                  const content = fs.readFileSync(entryPath);
+                  cardFiles.set(relativePath, new Uint8Array(content));
+                }
+              }
+            };
+            
+            readDirRecursive(fullCardPath);
+            console.log(`[DEV-FS] 读取了 ${cardFiles.size} 个文件（文件系统）`);
           }
-
-          console.log(`[DEV-FS] 读取了 ${cardFiles.size} 个文件（${inputCardFiles ? '编辑器传递' : '文件系统'}）`);
           
           // 确保输出目录存在
           if (!fs.existsSync(fullOutputPath)) {

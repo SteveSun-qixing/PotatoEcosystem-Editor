@@ -640,6 +640,167 @@ function toYaml(obj: Record<string, unknown>, indent = 0): string {
 }
 
 /**
+ * 生成导出用的 HTML 内容
+ * @param cardName - 卡片名称
+ * @param cardId - 卡片 ID
+ * @param card - 卡片信息
+ */
+function generateExportHTML(cardName: string, cardId: string, card: CardInfo): string {
+  const tags = card.metadata.tags || [];
+  const baseCards = card.structure || [];
+  
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${cardName}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      line-height: 1.8;
+      color: #333;
+      background: #f5f5f5;
+      padding: 40px;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      padding: 48px;
+    }
+    h1 {
+      color: #1a1a1a;
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      border-bottom: 3px solid #3b82f6;
+      padding-bottom: 16px;
+    }
+    .meta {
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 32px;
+      padding: 16px;
+      background: #f8fafc;
+      border-radius: 8px;
+    }
+    .meta p {
+      margin: 6px 0;
+    }
+    .meta strong {
+      color: #333;
+    }
+    .content {
+      margin-top: 24px;
+    }
+    .content h2 {
+      font-size: 20px;
+      color: #1a1a1a;
+      margin: 24px 0 16px;
+      padding-left: 12px;
+      border-left: 4px solid #3b82f6;
+    }
+    .base-card {
+      background: #fafafa;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 12px 0;
+    }
+    .base-card-type {
+      display: inline-block;
+      background: #e0f2fe;
+      color: #0369a1;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+    .base-card-content {
+      color: #374151;
+      font-size: 15px;
+    }
+    .tags {
+      margin-top: 32px;
+      padding-top: 24px;
+      border-top: 1px solid #e5e7eb;
+    }
+    .tag {
+      display: inline-block;
+      background: #dbeafe;
+      color: #1d4ed8;
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      margin: 4px 4px 4px 0;
+    }
+    .footer {
+      margin-top: 40px;
+      padding-top: 24px;
+      border-top: 1px solid #e5e7eb;
+      color: #9ca3af;
+      font-size: 12px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>${cardName}</h1>
+    <div class="meta">
+      <p><strong>卡片 ID:</strong> ${cardId}</p>
+      <p><strong>创建时间:</strong> ${card.metadata.created_at ? new Date(card.metadata.created_at).toLocaleString('zh-CN') : '未知'}</p>
+      <p><strong>导出时间:</strong> ${new Date().toLocaleString('zh-CN')}</p>
+    </div>
+    <div class="content">
+      <h2>卡片内容</h2>
+      ${baseCards.length > 0 ? baseCards.map((bc: BaseCardInfo) => `
+        <div class="base-card">
+          <span class="base-card-type">${getBaseCardTypeName(bc.type)}</span>
+          <div class="base-card-content">
+            ${bc.type === 'rich-text' && bc.config?.content_text 
+              ? bc.config.content_text 
+              : `<em style="color:#999">暂无内容</em>`}
+          </div>
+        </div>
+      `).join('') : '<p style="color:#999;text-align:center;padding:40px">此卡片暂无内容</p>'}
+    </div>
+    ${tags.length > 0 ? `
+    <div class="tags">
+      ${tags.map((tag: string | string[]) => 
+        `<span class="tag">${Array.isArray(tag) ? tag.join('/') : tag}</span>`
+      ).join('')}
+    </div>` : ''}
+    <div class="footer">
+      由 Chips Editor 导出 · ${new Date().toLocaleDateString('zh-CN')}
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * 获取基础卡片类型名称
+ */
+function getBaseCardTypeName(type: string): string {
+  const typeNames: Record<string, string> = {
+    'rich-text': '富文本',
+    'markdown': 'Markdown',
+    'image': '图片',
+    'video': '视频',
+    'audio': '音频',
+    'code': '代码',
+    'list': '列表',
+  };
+  return typeNames[type] || type;
+}
+
+/**
  * 执行导出操作
  * @param format - 导出格式
  */
@@ -810,95 +971,91 @@ async function handleExport(format: 'card' | 'html' | 'pdf' | 'image'): Promise<
       exportMessage.value = `导出完成！保存至: ${outputPath}/`;
       
     } else if (format === 'pdf') {
-      // PDF 导出 - 通过 HTML 转换模块生成页面，再转换为 PDF
-      exportMessage.value = '保存当前卡片...';
-      exportProgress.value = 10;
-
-      const cardPath = cardInfo.value.filePath || cardId;
-
-      try {
-        await saveCardToWorkspace(cardId, cardPath, cardInfo.value);
-      } catch (e) {
-        throw new Error(`保存卡片失败: ${e instanceof Error ? e.message : '未知错误'}`);
-      }
-
-      exportMessage.value = '读取卡片数据...';
-      exportProgress.value = 20;
-      const cardFiles = await readCardFromWorkspace(cardPath);
-
+      // PDF 导出 - 通过开发服务器转换
       exportMessage.value = '检查文件名...';
-      exportProgress.value = 30;
-      const { fileName: pdfFileName } = await generateUniqueFileName(cardName, '.pdf', EXPORT_DIR);
-
-      exportProgress.value = 50;
+      exportProgress.value = 15;
+      
+      // 生成唯一文件名（使用卡片名称，重名时自动添加编号）
+      const { fileName: pdfFileName, fullPath: pdfFullPath } = await generateUniqueFileName(cardName, '.pdf', EXPORT_DIR);
+      
+      exportMessage.value = '生成 HTML 内容...';
+      exportProgress.value = 20;
+      
+      // 生成 HTML 内容
+      const htmlContent = generateExportHTML(cardName, cardId, cardInfo.value);
+      
+      exportProgress.value = 40;
       exportMessage.value = '转换为 PDF...';
-
+      
+      // 调用转换 API（使用相对于 ExternalEnvironment 的路径）
       const outputPath = `ExternalEnvironment/${pdfFileName}`;
-      const result = await conversionService.convertToPDF({
-        cardId,
-        cardFiles,
-        outputPath,
-        includeAssets: true,
-        themeId: cardInfo.value.metadata.theme,
-        format: 'A4',
-        printBackground: true,
-        margin: { top: '15mm', right: '15mm', bottom: '15mm', left: '15mm' },
+      const response = await fetch(`${FILE_SERVER_URL}/convert/pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          html: htmlContent,
+          outputPath,
+          options: {
+            format: 'A4',
+            printBackground: true,
+            margin: { top: '15mm', right: '15mm', bottom: '15mm', left: '15mm' },
+          },
+        }),
       });
-
+      
       exportProgress.value = 90;
-
-      if (!result.success) {
-        throw new Error(result.error || 'PDF 转换失败');
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'PDF 转换失败');
       }
-
+      
       exportProgress.value = 100;
       exportStatus.value = 'success';
       exportMessage.value = `导出完成！保存至: ExternalEnvironment/${pdfFileName}`;
       
     } else if (format === 'image') {
-      // 图片导出 - 通过 HTML 转换模块生成页面，再转换为图片
-      exportMessage.value = '保存当前卡片...';
-      exportProgress.value = 10;
-
-      const cardPath = cardInfo.value.filePath || cardId;
-
-      try {
-        await saveCardToWorkspace(cardId, cardPath, cardInfo.value);
-      } catch (e) {
-        throw new Error(`保存卡片失败: ${e instanceof Error ? e.message : '未知错误'}`);
-      }
-
-      exportMessage.value = '读取卡片数据...';
-      exportProgress.value = 20;
-      const cardFiles = await readCardFromWorkspace(cardPath);
-
+      // 图片导出 - 通过开发服务器转换
       exportMessage.value = '检查文件名...';
-      exportProgress.value = 30;
-      const { fileName: imageFileName } = await generateUniqueFileName(cardName, '.png', EXPORT_DIR);
-
-      exportProgress.value = 50;
+      exportProgress.value = 15;
+      
+      // 生成唯一文件名（使用卡片名称，重名时自动添加编号）
+      const { fileName: imageFileName, fullPath: imageFullPath } = await generateUniqueFileName(cardName, '.png', EXPORT_DIR);
+      
+      exportMessage.value = '生成 HTML 内容...';
+      exportProgress.value = 20;
+      
+      // 生成 HTML 内容
+      const htmlContent = generateExportHTML(cardName, cardId, cardInfo.value);
+      
+      exportProgress.value = 40;
       exportMessage.value = '转换为图片...';
-
+      
+      // 调用转换 API（使用相对于 ExternalEnvironment 的路径）
       const outputPath = `ExternalEnvironment/${imageFileName}`;
-      const result = await conversionService.convertToImage({
-        cardId,
-        cardFiles,
-        outputPath,
-        includeAssets: true,
-        themeId: cardInfo.value.metadata.theme,
-        width: 800,
-        height: 600,
-        scale: 2,
-        fullPage: true,
-        type: 'png',
+      const response = await fetch(`${FILE_SERVER_URL}/convert/image`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          html: htmlContent,
+          outputPath,
+          options: {
+            width: 800,
+            height: 600,
+            scale: 2,
+            fullPage: true,
+            type: 'png',
+          },
+        }),
       });
-
+      
       exportProgress.value = 90;
-
-      if (!result.success) {
-        throw new Error(result.error || '图片转换失败');
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '图片转换失败');
       }
-
+      
       exportProgress.value = 100;
       exportStatus.value = 'success';
       exportMessage.value = `导出完成！保存至: ExternalEnvironment/${imageFileName}`;
