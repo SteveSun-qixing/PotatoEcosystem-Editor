@@ -6,8 +6,10 @@
  */
 
 import { computed } from 'vue';
+import { Button } from '@chips/components';
 import { useLayoutSwitch } from './use-layout-switch';
 import type { LayoutType } from '@/types';
+import { t } from '@/services/i18n-service';
 
 interface Props {
   /** 按钮尺寸 */
@@ -65,12 +67,12 @@ const currentIcon = computed(() => {
 
 /** 当前布局标签 */
 const currentLabel = computed(() => {
-  return isInfiniteCanvas.value ? '无限画布' : '工作台';
+  return isInfiniteCanvas.value ? t('layout_switcher.canvas') : t('layout_switcher.workbench');
 });
 
 /** 目标布局标签 */
 const targetLabel = computed(() => {
-  return isInfiniteCanvas.value ? '切换到工作台' : '切换到画布';
+  return isInfiniteCanvas.value ? t('layout_switcher.to_workbench') : t('layout_switcher.to_canvas');
 });
 
 /**
@@ -95,20 +97,21 @@ function handleKeyDown(e: KeyboardEvent): void {
 <template>
   <div class="layout-switcher">
     <!-- 布局切换按钮 -->
-    <button
-      type="button"
+    <Button
       :class="buttonClass"
       :disabled="disabled || isSwitching"
       :aria-label="targetLabel"
       :aria-pressed="isWorkbench"
       :title="targetLabel"
+      html-type="button"
+      type="default"
       @click="handleClick"
       @keydown="handleKeyDown"
     >
       <span class="layout-switcher__icon">{{ currentIcon }}</span>
       <span v-if="showLabel" class="layout-switcher__label">{{ currentLabel }}</span>
       <span v-if="isSwitching" class="layout-switcher__spinner"></span>
-    </button>
+    </Button>
 
     <!-- 布局选项（下拉） -->
     <div v-if="$slots.options" class="layout-switcher__options">

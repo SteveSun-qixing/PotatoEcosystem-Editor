@@ -2,51 +2,28 @@
 /**
  * 卡片类型网格组件
  * @module components/card-box-library/CardTypeGrid
- * @description 显示 26 种基础卡片类型，支持分类显示和拖放
+ * @description 基础卡片类型网格，支持拖放
  */
 
 import { computed } from 'vue';
 import type { CardTypeDefinition, DragData } from './types';
-import { cardCategories, getCardTypesByCategory } from './data';
+import { cardTypes as allCardTypes } from './data';
+import { t } from '@/services/i18n-service';
 
 interface Props {
   /** 卡片类型列表（可选，用于搜索过滤后的结果） */
   types?: CardTypeDefinition[];
-  /** 是否显示分类标题 */
-  showCategories?: boolean;
 }
 
-const props = withDefaults(defineProps<Props>(), {
-  showCategories: true,
-});
+const props = withDefaults(defineProps<Props>(), {});
 
 const emit = defineEmits<{
   /** 拖放开始 */
   dragStart: [data: DragData, event: DragEvent];
 }>();
 
-/** 按分类组织的卡片类型 */
-const categorizedTypes = computed(() => {
-  if (props.types) {
-    // 使用传入的类型（搜索结果）
-    const categories: { category: typeof cardCategories[0]; types: CardTypeDefinition[] }[] = [];
-
-    cardCategories.forEach((category) => {
-      const typesInCategory = props.types!.filter((t) => t.category === category.id);
-      if (typesInCategory.length > 0) {
-        categories.push({ category, types: typesInCategory });
-      }
-    });
-
-    return categories;
-  }
-
-  // 使用全部类型
-  return cardCategories.map((category) => ({
-    category,
-    types: getCardTypesByCategory(category.id),
-  }));
-});
+/** 获取类型列表 */
+const displayTypes = computed(() => props.types ?? allCardTypes);
 
 /**
  * 处理拖放开始
@@ -55,7 +32,7 @@ function handleDragStart(type: CardTypeDefinition, event: DragEvent): void {
   const data: DragData = {
     type: 'card',
     typeId: type.id,
-    name: type.name,
+    name: t(type.name),
   };
 
   emit('dragStart', data, event);
@@ -64,49 +41,19 @@ function handleDragStart(type: CardTypeDefinition, event: DragEvent): void {
 
 <template>
   <div class="card-type-grid">
-    <template v-if="showCategories">
+    <div class="card-type-grid__items">
       <div
-        v-for="{ category, types: categoryTypes } in categorizedTypes"
-        :key="category.id"
-        class="card-type-grid__category"
+        v-for="type in displayTypes"
+        :key="type.id"
+        class="card-type-grid__item"
+        draggable="true"
+        :title="t(type.description)"
+        @dragstart="handleDragStart(type, $event)"
       >
-        <div class="card-type-grid__category-header">
-          <span class="card-type-grid__category-icon">{{ category.icon }}</span>
-          <span class="card-type-grid__category-name">{{ category.name }}</span>
-          <span class="card-type-grid__category-count">{{ categoryTypes.length }}</span>
-        </div>
-
-        <div class="card-type-grid__items">
-          <div
-            v-for="type in categoryTypes"
-            :key="type.id"
-            class="card-type-grid__item"
-            draggable="true"
-            :title="type.description"
-            @dragstart="handleDragStart(type, $event)"
-          >
-            <span class="card-type-grid__item-icon">{{ type.icon }}</span>
-            <span class="card-type-grid__item-name">{{ type.name }}</span>
-          </div>
-        </div>
+        <span class="card-type-grid__item-icon">{{ type.icon }}</span>
+        <span class="card-type-grid__item-name">{{ t(type.name) }}</span>
       </div>
-    </template>
-
-    <template v-else>
-      <div class="card-type-grid__items card-type-grid__items--flat">
-        <div
-          v-for="type in types"
-          :key="type.id"
-          class="card-type-grid__item"
-          draggable="true"
-          :title="type.description"
-          @dragstart="handleDragStart(type, $event)"
-        >
-          <span class="card-type-grid__item-icon">{{ type.icon }}</span>
-          <span class="card-type-grid__item-name">{{ type.name }}</span>
-        </div>
-      </div>
-    </template>
+    </div>
   </div>
 </template>
 
@@ -114,47 +61,12 @@ function handleDragStart(type: CardTypeDefinition, event: DragEvent): void {
 .card-type-grid {
   display: flex;
   flex-direction: column;
-  gap: var(--chips-spacing-md, 12px);
-}
-
-.card-type-grid__category {
-  display: flex;
-  flex-direction: column;
-  gap: var(--chips-spacing-sm, 8px);
-}
-
-.card-type-grid__category-header {
-  display: flex;
-  align-items: center;
-  gap: var(--chips-spacing-xs, 4px);
-  padding: var(--chips-spacing-xs, 4px) 0;
-  border-bottom: 1px solid var(--chips-color-border, #e0e0e0);
-}
-
-.card-type-grid__category-icon {
-  font-size: var(--chips-font-size-md, 16px);
-}
-
-.card-type-grid__category-name {
-  font-size: var(--chips-font-size-sm, 14px);
-  font-weight: var(--chips-font-weight-medium, 500);
-  color: var(--chips-color-text-primary, #1a1a1a);
-}
-
-.card-type-grid__category-count {
-  font-size: var(--chips-font-size-xs, 12px);
-  color: var(--chips-color-text-tertiary, #999);
-  margin-left: auto;
 }
 
 .card-type-grid__items {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--chips-spacing-sm, 8px);
-}
-
-.card-type-grid__items--flat {
-  grid-template-columns: repeat(3, 1fr);
 }
 
 .card-type-grid__item {

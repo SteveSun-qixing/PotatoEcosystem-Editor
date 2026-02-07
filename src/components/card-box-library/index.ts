@@ -13,23 +13,16 @@ export { default as DragPreview } from './DragPreview.vue';
 
 // 类型
 export type {
-  CardCategory,
-  LayoutCategory,
   CardTypeDefinition,
   LayoutTypeDefinition,
-  CategoryDefinition,
   DragData,
   DragState,
 } from './types';
 
 // 数据
 export {
-  cardCategories,
-  layoutCategories,
   cardTypes,
   layoutTypes,
-  getCardTypesByCategory,
-  getLayoutTypesByCategory,
   searchCardTypes,
   searchLayoutTypes,
 } from './data';

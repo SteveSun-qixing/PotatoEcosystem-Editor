@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
+      '@chips/components': resolve(__dirname, '../Chips-ComponentLibrary/src'),
     },
   },
   test: {

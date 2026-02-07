@@ -9,6 +9,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useCardStore, useEditorStore } from '@/core/state';
 import PluginHost from './PluginHost.vue';
 import type { EditPanelProps, EditPanelPosition } from './types';
+import { t } from '@/services/i18n-service';
 
 // ==================== Props ====================
 interface Props {
@@ -68,7 +69,7 @@ const panelStyle = computed(() => {
   const width = isExpanded.value ? panelWidth.value : 0;
   return {
     '--panel-width': `${width}px`,
-    width: `${panelWidth.value}px`,
+    width: `${width}px`,
   };
 });
 
@@ -83,16 +84,7 @@ const panelClass = computed(() => ({
 
 /** 空状态提示文本 */
 const emptyText = computed(() => {
-  // 开发阶段使用 key，打包时替换为系统词汇编码
-  return 'edit_panel.empty_hint'; // t('edit_panel.empty_hint')
-});
-
-/** 面板标题 */
-const panelTitle = computed(() => {
-  if (selectedBaseCard.value) {
-    return selectedBaseCard.value.type;
-  }
-  return 'edit_panel.title'; // t('edit_panel.title')
+  return t('edit_panel.empty_hint');
 });
 
 // ==================== Methods ====================
@@ -184,11 +176,12 @@ defineExpose({
 <template>
   <div
     :class="panelClass"
+    :style="panelStyle"
     role="complementary"
-    aria-label="编辑面板"
+    :aria-label="t('edit_panel.title')"
   >
     <!-- 面板内容 - 直接显示插件编辑器 -->
-    <div class="edit-panel__content">
+    <div v-show="isExpanded" class="edit-panel__content">
       <!-- 有选中卡片时显示编辑组件 -->
       <Transition name="edit-panel-fade" mode="out-in">
         <div
@@ -210,7 +203,7 @@ defineExpose({
           class="edit-panel__empty"
         >
           <div class="edit-panel__empty-icon">📝</div>
-          <p class="edit-panel__empty-text">选择一个基础卡片进行编辑</p>
+          <p class="edit-panel__empty-text">{{ emptyText }}</p>
         </div>
       </Transition>
     </div>
@@ -231,84 +224,6 @@ defineExpose({
 
 .edit-panel--transitioning {
   pointer-events: none;
-}
-
-/* ==================== 头部 ==================== */
-.edit-panel__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--chips-spacing-sm, 8px) var(--chips-spacing-md, 12px);
-  background: var(--chips-color-surface-variant, #f5f5f5);
-  border-bottom: 1px solid var(--chips-color-border, #e0e0e0);
-  flex-shrink: 0;
-  min-height: 48px;
-}
-
-.edit-panel__header-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--chips-spacing-xs, 4px);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.edit-panel__title {
-  font-size: var(--chips-font-size-sm, 14px);
-  font-weight: var(--chips-font-weight-semibold, 600);
-  color: var(--chips-color-text-primary, #1a1a1a);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.edit-panel__subtitle {
-  font-size: var(--chips-font-size-xs, 12px);
-  color: var(--chips-color-text-secondary, #666666);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* ==================== 操作按钮 ==================== */
-.edit-panel__actions {
-  display: flex;
-  gap: var(--chips-spacing-xs, 4px);
-  flex-shrink: 0;
-}
-
-.edit-panel__action {
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: var(--chips-radius-sm, 4px);
-  background: transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  transition: background-color var(--chips-transition-fast, 0.15s) ease;
-}
-
-.edit-panel__action:hover {
-  background: var(--chips-color-surface-hover, rgba(0, 0, 0, 0.05));
-}
-
-.edit-panel__action:focus-visible {
-  outline: 2px solid var(--chips-color-primary, #3b82f6);
-  outline-offset: 2px;
-}
-
-.edit-panel__action-icon {
-  font-size: var(--chips-font-size-sm, 14px);
-  color: var(--chips-color-text-secondary, #666666);
-  transition: color var(--chips-transition-fast, 0.15s) ease;
-}
-
-.edit-panel__action:hover .edit-panel__action-icon {
-  color: var(--chips-color-text-primary, #1a1a1a);
 }
 
 /* ==================== 内容区 ==================== */

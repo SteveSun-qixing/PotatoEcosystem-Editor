@@ -5,6 +5,9 @@
  */
 
 import type { EventEmitter } from './event-manager';
+import { resourceService } from '@/services/resource-service';
+import { useWorkspaceService, type WorkspaceFile } from './workspace-service';
+import { generateId62 } from '@/utils';
 
 /**
  * 文件类型
@@ -103,18 +106,6 @@ export interface ClipboardData {
 }
 
 /**
- * 生成简单的 ID
- */
-function generateId(): string {
-  const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  let id = '';
-  for (let i = 0; i < 10; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return id;
-}
-
-/**
  * 获取文件扩展名对应的文件类型
  */
 export function getFileType(filename: string): FileType {
@@ -141,528 +132,314 @@ export function isValidFileName(name: string): boolean {
   return !invalidChars.test(name);
 }
 
+function stripExtension(name: string, ext: string): string {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(ext)) {
+    return name.slice(0, -ext.length);
+  }
+  return name;
+}
+
+function getBaseName(path: string): string {
+  const normalized = path.replace(/\\/g, '/');
+  const parts = normalized.split('/').filter(Boolean);
+  return parts[parts.length - 1] || path;
+}
+
+function convertWorkspaceFile(wsFile: WorkspaceFile, expandedPaths: Set<string>): FileInfo {
+  return {
+    id: wsFile.id,
+    name: wsFile.name,
+    path: wsFile.path,
+    type: wsFile.type === 'folder' ? 'folder' : wsFile.type,
+    size: 0,
+    createdAt: wsFile.createdAt,
+    modifiedAt: wsFile.modifiedAt,
+    isDirectory: wsFile.type === 'folder',
+    children: wsFile.children?.map((child) => convertWorkspaceFile(child, expandedPaths)),
+    expanded: wsFile.type === 'folder' ? expandedPaths.has(wsFile.path) : undefined,
+  };
+}
+
+function flattenFiles(files: FileInfo[]): FileInfo[] {
+  const result: FileInfo[] = [];
+  const walk = (list: FileInfo[]): void => {
+    for (const file of list) {
+      result.push(file);
+      if (file.children) {
+        walk(file.children);
+      }
+    }
+  };
+  walk(files);
+  return result;
+}
+
 /**
  * 文件服务类
- * 
- * 提供文件管理功能，所有操作通过事件系统通知其他模块。
- * 
- * @example
- * ```typescript
- * const fileService = new FileService(eventEmitter);
- * 
- * // 创建卡片
- * const result = await fileService.createCard({
- *   name: '新卡片',
- *   parentPath: '/workspace'
- * });
- * 
- * // 删除文件
- * await fileService.deleteFile('/workspace/old-card.card');
- * ```
  */
 export class FileService {
   /** 事件发射器 */
   private events: EventEmitter;
   /** 当前工作目录 */
-  private workingDirectory: string = '/workspace';
-  /** 文件缓存 */
-  private fileCache: Map<string, FileInfo> = new Map();
+  private workingDirectory: string = resourceService.workspaceRoot;
   /** 剪贴板数据 */
   private clipboard: ClipboardData | null = null;
-  /** Mock 文件系统数据 */
-  private mockFileSystem: FileInfo[] = [];
+  /** 展开状态 */
+  private expandedPaths = new Set<string>();
 
-  /**
-   * 创建文件服务
-   * @param events - 事件发射器实例
-   */
   constructor(events: EventEmitter) {
     this.events = events;
-    this.initMockFileSystem();
   }
 
-  /**
-   * 初始化文件系统
-   * 
-   * 设计说明：
-   * - 文件系统数据应该从真实的工作目录读取
-   * - 需要用户选择工作目录或打开已有的卡片/箱子文件
-   * - 这里初始化为空，等待用户操作
-   * 
-   * TODO: 通过内核的文件系统接口读取真实目录
-   */
-  private initMockFileSystem(): void {
-    // 初始化为空，等待用户选择工作目录
-    this.mockFileSystem = [];
-    this.workingDirectory = '';
+  destroy(): void {
+    this.clipboard = null;
+    this.expandedPaths.clear();
   }
 
-  /**
-   * 获取当前工作目录
-   */
   getWorkingDirectory(): string {
     return this.workingDirectory;
   }
 
-  /**
-   * 设置工作目录
-   * @param path - 目录路径
-   */
   setWorkingDirectory(path: string): void {
     this.workingDirectory = path;
     this.events.emit('file:working-directory-changed', { path });
   }
 
-  /**
-   * 获取文件列表
-   * @param path - 目录路径，默认为工作目录
-   * @returns 文件列表
-   */
   async getFileList(path?: string): Promise<FileInfo[]> {
-    const targetPath = path ?? this.workingDirectory;
-    
-    // 从 Mock 文件系统查找
-    const findDirectory = (files: FileInfo[], searchPath: string): FileInfo | null => {
-      for (const file of files) {
-        if (file.path === searchPath) {
-          return file;
-        }
-        if (file.children) {
-          const found = findDirectory(file.children, searchPath);
-          if (found) return found;
-        }
-      }
-      return null;
-    };
-
-    // 如果是根目录，返回整个文件系统
-    if (targetPath === '/workspace') {
-      return this.mockFileSystem[0]?.children ?? [];
+    const tree = await this.getFileTree();
+    if (!path) {
+      return flattenFiles(tree);
     }
-
-    const dir = findDirectory(this.mockFileSystem, targetPath);
-    return dir?.children ?? [];
+    return flattenFiles(tree).filter((file) => file.path.startsWith(path));
   }
 
-  /**
-   * 获取完整文件树
-   * @returns 文件树
-   */
   async getFileTree(): Promise<FileInfo[]> {
-    return this.mockFileSystem[0]?.children ?? [];
+    const workspaceService = useWorkspaceService();
+    if (!workspaceService.isInitialized.value) {
+      await workspaceService.initialize();
+    }
+    const wsFiles = workspaceService.files.value;
+    return wsFiles.map((file) => convertWorkspaceFile(file, this.expandedPaths));
   }
 
-  /**
-   * 获取文件信息
-   * @param path - 文件路径
-   * @returns 文件信息
-   */
   async getFileInfo(path: string): Promise<FileInfo | null> {
-    const findFile = (files: FileInfo[], searchPath: string): FileInfo | null => {
-      for (const file of files) {
-        if (file.path === searchPath) {
-          return file;
-        }
-        if (file.children) {
-          const found = findFile(file.children, searchPath);
-          if (found) return found;
-        }
-      }
-      return null;
-    };
-
-    return findFile(this.mockFileSystem, path);
+    const tree = await this.getFileTree();
+    const file = flattenFiles(tree).find((item) => item.path === path);
+    return file ?? null;
   }
 
-  /**
-   * 创建卡片
-   * @param options - 创建选项
-   * @returns 操作结果
-   */
   async createCard(options: CreateCardOptions): Promise<FileOperationResult> {
     if (!isValidFileName(options.name)) {
-      return {
-        success: false,
-        error: 'error.invalid_filename',
-        errorCode: 'VAL-1001',
-      };
+      return { success: false, error: 'error.invalid_filename', errorCode: 'VAL-1001' };
     }
 
-    const now = new Date().toISOString();
-    const fileName = options.name.endsWith('.card') ? options.name : `${options.name}.card`;
-    const filePath = `${options.parentPath}/${fileName}`;
-
-    const newFile: FileInfo = {
-      id: generateId(),
-      name: fileName,
-      path: filePath,
-      type: 'card',
-      size: 0,
-      createdAt: now,
-      modifiedAt: now,
-      isDirectory: false,
-    };
-
-    // 添加到文件系统
-    this.addFileToSystem(options.parentPath, newFile);
-
-    this.events.emit('file:created', { file: newFile });
-    return { success: true, file: newFile };
+    const name = stripExtension(options.name.trim(), '.card');
+    const workspaceService = useWorkspaceService();
+    try {
+      const file = await workspaceService.createCard(
+        name,
+        options.type ? { type: options.type, id: generateId62() } : undefined,
+        undefined,
+        options.parentPath
+      );
+      const fileInfo = convertWorkspaceFile(file, this.expandedPaths);
+      this.events.emit('file:created', { file: fileInfo });
+      return { success: true, file: { ...fileInfo, name: `${name}.card`, type: 'card' } };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'error.create_failed',
+        errorCode: 'SYS-9001',
+      };
+    }
   }
 
-  /**
-   * 创建箱子
-   * @param options - 创建选项
-   * @returns 操作结果
-   */
   async createBox(options: CreateBoxOptions): Promise<FileOperationResult> {
     if (!isValidFileName(options.name)) {
-      return {
-        success: false,
-        error: 'error.invalid_filename',
-        errorCode: 'VAL-1001',
-      };
+      return { success: false, error: 'error.invalid_filename', errorCode: 'VAL-1001' };
     }
 
-    const now = new Date().toISOString();
-    const fileName = options.name.endsWith('.box') ? options.name : `${options.name}.box`;
-    const filePath = `${options.parentPath}/${fileName}`;
-
-    const newFile: FileInfo = {
-      id: generateId(),
-      name: fileName,
-      path: filePath,
-      type: 'box',
-      size: 0,
-      createdAt: now,
-      modifiedAt: now,
-      isDirectory: false,
-    };
-
-    this.addFileToSystem(options.parentPath, newFile);
-
-    this.events.emit('file:created', { file: newFile });
-    return { success: true, file: newFile };
+    const name = stripExtension(options.name.trim(), '.box');
+    const workspaceService = useWorkspaceService();
+    try {
+      const file = await workspaceService.createBox(name, options.layout, options.parentPath);
+      const fileInfo = convertWorkspaceFile(file, this.expandedPaths);
+      this.events.emit('file:created', { file: fileInfo });
+      return { success: true, file: { ...fileInfo, name: `${name}.box`, type: 'box' } };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'error.create_failed',
+        errorCode: 'SYS-9001',
+      };
+    }
   }
 
-  /**
-   * 创建文件夹
-   * @param options - 创建选项
-   * @returns 操作结果
-   */
   async createFolder(options: CreateFolderOptions): Promise<FileOperationResult> {
     if (!isValidFileName(options.name)) {
-      return {
-        success: false,
-        error: 'error.invalid_filename',
-        errorCode: 'VAL-1001',
-      };
+      return { success: false, error: 'error.invalid_filename', errorCode: 'VAL-1001' };
     }
 
-    const now = new Date().toISOString();
-    const filePath = `${options.parentPath}/${options.name}`;
-
-    const newFolder: FileInfo = {
-      id: generateId(),
-      name: options.name,
-      path: filePath,
-      type: 'folder',
-      size: 0,
-      createdAt: now,
-      modifiedAt: now,
-      isDirectory: true,
-      children: [],
-      expanded: false,
-    };
-
-    this.addFileToSystem(options.parentPath, newFolder);
-
-    this.events.emit('file:created', { file: newFolder });
-    return { success: true, file: newFolder };
+    const workspaceService = useWorkspaceService();
+    try {
+      const file = await workspaceService.createFolder(options.name.trim(), options.parentPath);
+      const fileInfo = convertWorkspaceFile(file, this.expandedPaths);
+      this.events.emit('file:created', { file: fileInfo });
+      return { success: true, file: fileInfo };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'error.create_failed',
+        errorCode: 'SYS-9001',
+      };
+    }
   }
 
-  /**
-   * 将文件添加到文件系统
-   */
-  private addFileToSystem(parentPath: string, file: FileInfo): void {
-    const findAndAdd = (files: FileInfo[]): boolean => {
-      for (const f of files) {
-        if (f.path === parentPath && f.isDirectory) {
-          if (!f.children) f.children = [];
-          f.children.push(file);
-          return true;
-        }
-        if (f.children && findAndAdd(f.children)) {
-          return true;
-        }
-      }
-      return false;
-    };
-
-    findAndAdd(this.mockFileSystem);
-  }
-
-  /**
-   * 打开文件
-   * @param path - 文件路径
-   */
   async openFile(path: string): Promise<void> {
-    const file = await this.getFileInfo(path);
-    if (!file) {
-      throw new Error(`File not found: ${path}`);
-    }
-
-    this.events.emit('file:open', { file });
+    this.events.emit('file:opened', { path });
   }
 
-  /**
-   * 删除文件
-   * @param path - 文件路径
-   * @returns 操作结果
-   */
   async deleteFile(path: string): Promise<FileOperationResult> {
-    const file = await this.getFileInfo(path);
-    if (!file) {
+    const workspaceService = useWorkspaceService();
+    const tree = await this.getFileTree();
+    const target = flattenFiles(tree).find((file) => file.path === path);
+
+    if (!target) {
+      return { success: false, error: 'error.file_not_found', errorCode: 'RES-3001' };
+    }
+
+    try {
+      await workspaceService.deleteFile(target.id);
+      this.events.emit('file:deleted', { path });
+      return { success: true };
+    } catch (error) {
       return {
         success: false,
-        error: 'error.file_not_found',
-        errorCode: 'RES-3001',
+        error: error instanceof Error ? error.message : 'error.delete_failed',
+        errorCode: 'SYS-9002',
       };
     }
-
-    // 从文件系统中移除
-    const removeFromSystem = (files: FileInfo[], targetPath: string): boolean => {
-      for (let i = 0; i < files.length; i++) {
-        if (files[i]?.path === targetPath) {
-          files.splice(i, 1);
-          return true;
-        }
-        const children = files[i]?.children;
-        if (children && removeFromSystem(children, targetPath)) {
-          return true;
-        }
-      }
-      return false;
-    };
-
-    removeFromSystem(this.mockFileSystem, path);
-    this.fileCache.delete(path);
-
-    this.events.emit('file:deleted', { path, file });
-    return { success: true, file };
   }
 
-  /**
-   * 重命名文件
-   * @param path - 文件路径
-   * @param newName - 新名称
-   * @returns 操作结果
-   */
   async renameFile(path: string, newName: string): Promise<FileOperationResult> {
     if (!isValidFileName(newName)) {
+      return { success: false, error: 'error.invalid_filename', errorCode: 'VAL-1001' };
+    }
+
+    const workspaceService = useWorkspaceService();
+    const tree = await this.getFileTree();
+    const target = flattenFiles(tree).find((file) => file.path === path);
+
+    if (!target) {
+      return { success: false, error: 'error.file_not_found', errorCode: 'RES-3001' };
+    }
+
+    try {
+      await workspaceService.renameFile(target.id, newName.trim());
+      this.events.emit('file:renamed', { path, newName: newName.trim() });
+      return { success: true };
+    } catch (error) {
       return {
         success: false,
-        error: 'error.invalid_filename',
-        errorCode: 'VAL-1001',
+        error: error instanceof Error ? error.message : 'error.rename_failed',
+        errorCode: 'SYS-9003',
       };
-    }
-
-    const file = await this.getFileInfo(path);
-    if (!file) {
-      return {
-        success: false,
-        error: 'error.file_not_found',
-        errorCode: 'RES-3001',
-      };
-    }
-
-    const oldPath = file.path;
-    const parentPath = path.substring(0, path.lastIndexOf('/'));
-    
-    // 保留原有扩展名
-    let finalName = newName;
-    if (file.type === 'card' && !newName.endsWith('.card')) {
-      finalName = `${newName}.card`;
-    } else if (file.type === 'box' && !newName.endsWith('.box')) {
-      finalName = `${newName}.box`;
-    }
-
-    file.name = finalName;
-    file.path = `${parentPath}/${finalName}`;
-    file.modifiedAt = new Date().toISOString();
-
-    // 更新子文件路径（如果是文件夹）
-    if (file.isDirectory && file.children) {
-      this.updateChildrenPaths(file.children, oldPath, file.path);
-    }
-
-    this.fileCache.delete(oldPath);
-    this.events.emit('file:renamed', { oldPath, newPath: file.path, file });
-    
-    return { success: true, file };
-  }
-
-  /**
-   * 递归更新子文件路径
-   */
-  private updateChildrenPaths(children: FileInfo[], oldParentPath: string, newParentPath: string): void {
-    for (const child of children) {
-      child.path = child.path.replace(oldParentPath, newParentPath);
-      if (child.children) {
-        this.updateChildrenPaths(child.children, oldParentPath, newParentPath);
-      }
     }
   }
 
-  /**
-   * 复制文件
-   * @param sourcePath - 源文件路径
-   * @param destPath - 目标路径
-   * @returns 操作结果
-   */
   async copyFile(sourcePath: string, destPath: string): Promise<FileOperationResult> {
-    const file = await this.getFileInfo(sourcePath);
-    if (!file) {
-      return {
-        success: false,
-        error: 'error.file_not_found',
-        errorCode: 'RES-3001',
-      };
-    }
-
-    const now = new Date().toISOString();
-    const newFile: FileInfo = {
-      ...file,
-      id: generateId(),
-      path: `${destPath}/${file.name}`,
-      createdAt: now,
-      modifiedAt: now,
-    };
-
-    if (file.isDirectory && file.children) {
-      newFile.children = this.deepCopyChildren(file.children, newFile.path);
-    }
-
-    this.addFileToSystem(destPath, newFile);
-    this.events.emit('file:copied', { source: sourcePath, dest: newFile.path, file: newFile });
-    
-    return { success: true, file: newFile };
-  }
-
-  /**
-   * 深拷贝子文件
-   */
-  private deepCopyChildren(children: FileInfo[], newParentPath: string): FileInfo[] {
-    return children.map((child) => {
-      const newChild: FileInfo = {
-        ...child,
-        id: generateId(),
-        path: `${newParentPath}/${child.name}`,
-      };
-      if (child.children) {
-        newChild.children = this.deepCopyChildren(child.children, newChild.path);
+    try {
+      const exists = await resourceService.exists(sourcePath);
+      if (!exists) {
+        return { success: false, error: 'error.file_not_found', errorCode: 'RES-3001' };
       }
-      return newChild;
-    });
-  }
-
-  /**
-   * 移动文件
-   * @param sourcePath - 源文件路径
-   * @param destPath - 目标路径
-   * @returns 操作结果
-   */
-  async moveFile(sourcePath: string, destPath: string): Promise<FileOperationResult> {
-    const file = await this.getFileInfo(sourcePath);
-    if (!file) {
+      const baseName = getBaseName(sourcePath);
+      const targetPath = destPath.endsWith('/') ? `${destPath}${baseName}` : `${destPath}/${baseName}`;
+      await resourceService.copy(sourcePath, targetPath);
+      this.events.emit('file:copied', { sourcePath, destPath: targetPath });
+      return { success: true };
+    } catch (error) {
       return {
         success: false,
-        error: 'error.file_not_found',
-        errorCode: 'RES-3001',
+        error: error instanceof Error ? error.message : 'error.copy_failed',
+        errorCode: 'SYS-9004',
       };
     }
-
-    // 先从原位置删除
-    await this.deleteFile(sourcePath);
-
-    // 更新路径
-    const oldPath = file.path;
-    file.path = `${destPath}/${file.name}`;
-    file.modifiedAt = new Date().toISOString();
-
-    // 更新子文件路径
-    if (file.isDirectory && file.children) {
-      this.updateChildrenPaths(file.children, oldPath, file.path);
-    }
-
-    // 添加到新位置
-    this.addFileToSystem(destPath, file);
-    this.events.emit('file:moved', { source: sourcePath, dest: file.path, file });
-    
-    return { success: true, file };
   }
 
-  /**
-   * 切换文件夹展开状态
-   * @param path - 文件夹路径
-   */
+  async moveFile(sourcePath: string, destPath: string): Promise<FileOperationResult> {
+    try {
+      const exists = await resourceService.exists(sourcePath);
+      if (!exists) {
+        return { success: false, error: 'error.file_not_found', errorCode: 'RES-3001' };
+      }
+      const baseName = getBaseName(sourcePath);
+      const targetPath = destPath.endsWith('/') ? `${destPath}${baseName}` : `${destPath}/${baseName}`;
+      await resourceService.move(sourcePath, targetPath);
+      this.events.emit('file:moved', { sourcePath, destPath: targetPath });
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'error.move_failed',
+        errorCode: 'SYS-9005',
+      };
+    }
+  }
+
   async toggleFolderExpanded(path: string): Promise<void> {
-    const file = await this.getFileInfo(path);
-    if (file && file.isDirectory) {
-      file.expanded = !file.expanded;
-      this.events.emit('file:folder-toggled', { path, expanded: file.expanded });
+    const info = await this.getFileInfo(path);
+    if (!info || !info.isDirectory) return;
+
+    const next = !this.expandedPaths.has(path);
+    if (next) {
+      this.expandedPaths.add(path);
+    } else {
+      this.expandedPaths.delete(path);
     }
+
+    this.events.emit('file:folder-toggled', { path, expanded: next });
   }
 
-  /**
-   * 设置文件夹展开状态
-   * @param path - 文件夹路径
-   * @param expanded - 是否展开
-   */
   async setFolderExpanded(path: string, expanded: boolean): Promise<void> {
-    const file = await this.getFileInfo(path);
-    if (file && file.isDirectory) {
-      file.expanded = expanded;
-      this.events.emit('file:folder-toggled', { path, expanded });
+    const info = await this.getFileInfo(path);
+    if (!info || !info.isDirectory) return;
+
+    if (expanded) {
+      this.expandedPaths.add(path);
+    } else {
+      this.expandedPaths.delete(path);
     }
+
+    this.events.emit('file:folder-toggled', { path, expanded });
   }
 
-  /**
-   * 复制到剪贴板
-   * @param paths - 文件路径列表
-   */
-  copyToClipboard(paths: string[]): void {
-    this.clipboard = {
-      operation: 'copy',
-      files: paths,
-    };
+  copyToClipboard(files: string[]): void {
+    this.clipboard = { operation: 'copy', files };
     this.events.emit('file:clipboard-changed', { clipboard: this.clipboard });
   }
 
-  /**
-   * 剪切到剪贴板
-   * @param paths - 文件路径列表
-   */
-  cutToClipboard(paths: string[]): void {
-    this.clipboard = {
-      operation: 'cut',
-      files: paths,
-    };
+  cutToClipboard(files: string[]): void {
+    this.clipboard = { operation: 'cut', files };
     this.events.emit('file:clipboard-changed', { clipboard: this.clipboard });
   }
 
-  /**
-   * 粘贴文件
-   * @param destPath - 目标路径
-   * @returns 操作结果列表
-   */
+  getClipboard(): ClipboardData | null {
+    return this.clipboard;
+  }
+
+  clearClipboard(): void {
+    this.clipboard = null;
+    this.events.emit('file:clipboard-changed', { clipboard: this.clipboard });
+  }
+
   async paste(destPath: string): Promise<FileOperationResult[]> {
     if (!this.clipboard || this.clipboard.files.length === 0) {
-      return [{ success: false, error: 'error.clipboard_empty' }];
+      return [{ success: false, error: 'error.clipboard_empty', errorCode: 'VAL-2001' }];
     }
 
     const results: FileOperationResult[] = [];
-    
     for (const sourcePath of this.clipboard.files) {
       if (this.clipboard.operation === 'copy') {
         results.push(await this.copyFile(sourcePath, destPath));
@@ -671,95 +448,53 @@ export class FileService {
       }
     }
 
-    // 剪切操作后清空剪贴板
     if (this.clipboard.operation === 'cut') {
-      this.clipboard = null;
+      this.clearClipboard();
     }
 
     return results;
   }
 
-  /**
-   * 获取剪贴板数据
-   */
-  getClipboard(): ClipboardData | null {
-    return this.clipboard;
-  }
-
-  /**
-   * 清空剪贴板
-   */
-  clearClipboard(): void {
-    this.clipboard = null;
-    this.events.emit('file:clipboard-changed', { clipboard: null });
-  }
-
-  /**
-   * 搜索文件
-   * @param query - 搜索关键词
-   * @param options - 搜索选项
-   * @returns 匹配的文件列表
-   */
   async searchFiles(
     query: string,
-    options: { type?: FileType; path?: string } = {}
+    options?: { type?: FileType; path?: string }
   ): Promise<FileInfo[]> {
-    if (!query.trim()) {
+    if (!query || query.trim().length === 0) {
       return [];
     }
 
-    const results: FileInfo[] = [];
-    const lowerQuery = query.toLowerCase();
+    const tree = await this.getFileTree();
+    const list = flattenFiles(tree);
+    const normalized = query.trim().toLowerCase();
 
-    const searchInFiles = (files: FileInfo[]): void => {
-      for (const file of files) {
-        const nameMatch = file.name.toLowerCase().includes(lowerQuery);
-        const typeMatch = !options.type || file.type === options.type;
-        const pathMatch = !options.path || file.path.startsWith(options.path);
-
-        if (nameMatch && typeMatch && pathMatch) {
-          results.push(file);
-        }
-
-        if (file.children) {
-          searchInFiles(file.children);
-        }
+    return list.filter((file) => {
+      if (options?.type && file.type !== options.type) {
+        return false;
       }
-    };
-
-    searchInFiles(this.mockFileSystem);
-    return results;
+      if (options?.path && !file.path.startsWith(options.path)) {
+        return false;
+      }
+      return file.name.toLowerCase().includes(normalized);
+    });
   }
 
-  /**
-   * 刷新文件列表
-   */
   async refresh(): Promise<void> {
-    this.fileCache.clear();
+    const workspaceService = useWorkspaceService();
+    await workspaceService.refresh();
     this.events.emit('file:refreshed', {});
-  }
-
-  /**
-   * 清理资源
-   */
-  destroy(): void {
-    this.fileCache.clear();
-    this.clipboard = null;
   }
 }
 
-/** 单例实例 */
+// 单例实例
 let fileServiceInstance: FileService | null = null;
 
 /**
  * 获取文件服务实例
- * @param events - 事件发射器（首次调用必须提供）
- * @returns 文件服务实例
  */
 export function getFileService(events?: EventEmitter): FileService {
   if (!fileServiceInstance) {
     if (!events) {
-      throw new Error('EventEmitter is required for first initialization');
+      throw new Error('[FileService] EventEmitter is required for first initialization');
     }
     fileServiceInstance = new FileService(events);
   }
@@ -767,11 +502,8 @@ export function getFileService(events?: EventEmitter): FileService {
 }
 
 /**
- * 重置文件服务（用于测试）
+ * 重置文件服务（主要用于测试）
  */
 export function resetFileService(): void {
-  if (fileServiceInstance) {
-    fileServiceInstance.destroy();
-    fileServiceInstance = null;
-  }
+  fileServiceInstance = null;
 }

@@ -23,6 +23,9 @@
 
 import type { EventEmitter } from './event-manager';
 import { createEventEmitter } from './event-manager';
+import { resourceService } from '@/services/resource-service';
+import { createBaseCardContentDocument } from './base-card-content-loader';
+import { generateId62, isValidId62 } from '@/utils';
 
 // ========== 类型定义 ==========
 
@@ -47,11 +50,11 @@ export interface CardMetadataYaml {
   /** 修改时间（ISO 8601 格式） */
   modified_at: string;
   /** 主题 ID */
-  theme_id: string;
+  theme: string;
   /** 标签数组 */
   tags: string[][];
   /** 薯片规范版本 */
-  chips_standards_version: string;
+  chip_standards_version: string;
 }
 
 /** 结构文件中的基础卡片条目 */
@@ -132,13 +135,10 @@ export interface CardInitResult {
 // ========== 常量定义 ==========
 
 /** 默认主题 ID */
-const DEFAULT_THEME_ID = '薯片官方：默认主题';
+const DEFAULT_THEME_ID = 'default-light';
 
 /** 卡片规范版本 */
 const CHIPS_STANDARDS_VERSION = '1.0.0';
-
-/** 62 进制字符集 */
-const CHARS = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 // ========== 多语言键定义 ==========
 // 开发阶段使用人类可读的 key，打包时自动替换为系统编码
@@ -155,25 +155,12 @@ const I18N_KEYS = {
 // ========== 工具函数 ==========
 
 /**
- * 生成十位 62 进制 ID
- * @returns 10 位 62 进制字符串
- */
-function generateId(): string {
-  let id = '';
-  for (let i = 0; i < 10; i++) {
-    id += CHARS.charAt(Math.floor(Math.random() * CHARS.length));
-  }
-  return id;
-}
-
-/**
  * 验证 ID 格式是否正确
  * @param id - 要验证的 ID
  * @returns 是否为有效的 10 位 62 进制 ID
  */
 function isValidId(id: string): boolean {
-  if (typeof id !== 'string') return false;
-  return /^[0-9a-zA-Z]{10}$/.test(id);
+  return isValidId62(id);
 }
 
 /**
@@ -271,11 +258,33 @@ function toYaml(obj: unknown, indent = 0): string {
     }
     return obj.map(item => {
       if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
-        const itemYaml = toYaml(item, indent + 1);
-        const lines = itemYaml.split('\n');
-        return `${spaces}- ${lines[0]}\n${lines.slice(1).map(l => `${spaces}  ${l}`).join('\n')}`.trim();
+        // 对象数组项：第一个属性紧跟 -，后续属性对齐
+        const entries = Object.entries(item as Record<string, unknown>);
+        if (entries.length === 0) {
+          return `${spaces}- {}`;
+        }
+        const firstEntry = entries[0];
+        const firstValue = typeof firstEntry[1] === 'object' && firstEntry[1] !== null
+          ? `\n${toYaml(firstEntry[1], indent + 2)}`
+          : ` ${toYaml(firstEntry[1], 0)}`;
+        const firstLine = `${spaces}- ${firstEntry[0]}:${firstValue}`;
+        
+        const restLines = entries.slice(1).map(([key, value]) => {
+          if (typeof value === 'object' && value !== null) {
+            if (Array.isArray(value) && value.length === 0) {
+              return `${spaces}  ${key}: []`;
+            }
+            if (!Array.isArray(value) && Object.keys(value).length === 0) {
+              return `${spaces}  ${key}: {}`;
+            }
+            return `${spaces}  ${key}:\n${toYaml(value, indent + 2)}`;
+          }
+          return `${spaces}  ${key}: ${toYaml(value, 0)}`;
+        });
+        
+        return [firstLine, ...restLines].join('\n');
       }
-      return `${spaces}- ${toYaml(item, indent + 1)}`;
+      return `${spaces}- ${toYaml(item, 0)}`;
     }).join('\n');
   }
   
@@ -384,16 +393,8 @@ export function createCardInitializer(
    * @param path - 目录路径
    */
   async function createDirectory(path: string): Promise<void> {
-    // TODO: 通过 SDK 调用内核服务
-    // 目前使用占位实现，实际需要通过 Core.request 调用
-    // await sdk.request({
-    //   service: 'file',
-    //   method: 'createDirectory',
-    //   payload: { path }
-    // });
-    
-    // 临时模拟实现 - 在实际集成时替换为 SDK 调用
     console.log(`[CardInitializer] Creating directory: ${path}`);
+    await resourceService.ensureDir(path);
   }
 
   /**
@@ -402,15 +403,8 @@ export function createCardInitializer(
    * @param content - 文件内容
    */
   async function writeFile(path: string, content: string): Promise<void> {
-    // TODO: 通过 SDK 调用内核服务
-    // await sdk.request({
-    //   service: 'file',
-    //   method: 'write',
-    //   payload: { path, content }
-    // });
-    
-    // 临时模拟实现 - 在实际集成时替换为 SDK 调用
     console.log(`[CardInitializer] Writing file: ${path}`);
+    await resourceService.writeText(path, content);
   }
 
   /**
@@ -418,16 +412,7 @@ export function createCardInitializer(
    * @param path - 路径
    */
   async function exists(path: string): Promise<boolean> {
-    // TODO: 通过 SDK 调用内核服务
-    // const response = await sdk.request({
-    //   service: 'file',
-    //   method: 'exists',
-    //   payload: { path }
-    // });
-    // return response.data;
-    
-    // 临时模拟实现 - 假设不存在
-    return false;
+    return resourceService.exists(path);
   }
 
   /**
@@ -459,9 +444,9 @@ export function createCardInitializer(
       name,
       created_at: timestamp,
       modified_at: timestamp,
-      theme_id: defaultThemeId,
+      theme: defaultThemeId,
       tags: [],
-      chips_standards_version: CHIPS_STANDARDS_VERSION,
+      chip_standards_version: CHIPS_STANDARDS_VERSION,
     };
   }
 
@@ -492,10 +477,7 @@ export function createCardInitializer(
    * 生成基础卡片配置文件内容
    */
   function generateBasicCardConfig(basicCard: BasicCardConfig): BasicCardYaml {
-    return {
-      type: basicCard.type,
-      data: basicCard.data || {},
-    };
+    return createBaseCardContentDocument(basicCard.type, basicCard.data);
   }
 
   /**
@@ -542,7 +524,11 @@ export function createCardInitializer(
       }
 
       // 2. 定义路径
-      const cardPath = `${workspaceRoot}/${cardId}`;
+      const normalizedCardId = cardId.endsWith('.card')
+        ? cardId.replace(/\.card$/i, '')
+        : cardId;
+      const cardFolderName = normalizedCardId;
+      const cardPath = `${workspaceRoot}/${cardFolderName}`;
       const cardConfigPath = `${cardPath}/.card`;
       const contentPath = `${cardPath}/content`;
       const cardcoverPath = `${cardPath}/cardcover`;
@@ -618,9 +604,12 @@ export function createCardInitializer(
         error: errorMessage,
       });
 
+      const fallbackFolderName = cardId.endsWith('.card')
+        ? cardId.replace(/\.card$/i, '')
+        : cardId;
       return {
         success: false,
-        cardPath: `${workspaceRoot}/${cardId}`,
+        cardPath: `${workspaceRoot}/${fallbackFolderName}`,
         createdFiles,
         error: t(I18N_KEYS.ERROR_CREATE_DIRECTORY_FAILED) + `: ${errorMessage}`,
         errorCode: 'SYS-9001',
@@ -632,14 +621,14 @@ export function createCardInitializer(
    * 生成新的卡片 ID
    */
   function generateCardId(): string {
-    return generateId();
+    return generateId62();
   }
 
   /**
    * 生成新的基础卡片 ID
    */
   function generateBasicCardId(): string {
-    return generateId();
+    return generateId62();
   }
 
   /**

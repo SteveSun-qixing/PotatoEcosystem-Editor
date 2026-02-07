@@ -7,6 +7,7 @@
 
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import type { FileInfo } from '@/core/file-service';
+import { t } from '@/services/i18n-service';
 
 /**
  * 菜单项接口
@@ -80,12 +81,11 @@ const menuItems = computed<MenuItem[]>(() => {
   // 新建菜单（始终显示）
   items.push({
     id: 'new',
-    label: 'file.new',
+    label: 'file_manager.menu_new',
     icon: '➕',
     children: [
-      { id: 'new-card', label: 'file.new_card', icon: '🃏' },
-      { id: 'new-box', label: 'file.new_box', icon: '📦' },
-      { id: 'new-folder', label: 'file.new_folder', icon: '📁' },
+      { id: 'new-card', label: 'file_manager.new_card', icon: '🃏' },
+      { id: 'new-box', label: 'file_manager.new_box', icon: '📦' },
     ],
   });
 
@@ -95,7 +95,7 @@ const menuItems = computed<MenuItem[]>(() => {
   if (hasSelection.value) {
     items.push({
       id: 'open',
-      label: 'file.open',
+      label: 'file_manager.open',
       icon: '📂',
       shortcut: 'Enter',
       disabled: !isSingleFile.value,
@@ -132,7 +132,7 @@ const menuItems = computed<MenuItem[]>(() => {
 
     items.push({
       id: 'rename',
-      label: 'file.rename',
+      label: 'file_manager.rename',
       icon: '✏️',
       shortcut: 'F2',
       disabled: !isSingleFile.value,
@@ -148,19 +148,11 @@ const menuItems = computed<MenuItem[]>(() => {
 
   items.push({ id: 'divider-4', label: '', divider: true });
 
-  // 刷新
-  items.push({
-    id: 'refresh',
-    label: 'file.refresh',
-    icon: '🔄',
-    shortcut: 'F5',
-  });
-
   // 在资源管理器中显示
   if (isSingleFile.value) {
     items.push({
       id: 'reveal',
-      label: 'file.reveal_in_finder',
+      label: 'file_manager.reveal_in_finder',
       icon: '🔍',
     });
   }
@@ -316,7 +308,7 @@ onUnmounted(() => {
             @mouseenter="handleMouseEnter(item)"
           >
             <span v-if="item.icon" class="context-menu__icon">{{ item.icon }}</span>
-            <span class="context-menu__label">{{ item.label }}</span>
+            <span class="context-menu__label">{{ t(item.label) }}</span>
             <span v-if="item.shortcut" class="context-menu__shortcut">{{ item.shortcut }}</span>
             <span v-if="item.children" class="context-menu__arrow">▶</span>
 
@@ -336,7 +328,7 @@ onUnmounted(() => {
                   @click.stop="handleSubmenuClick(child)"
                 >
                   <span v-if="child.icon" class="context-menu__icon">{{ child.icon }}</span>
-                  <span class="context-menu__label">{{ child.label }}</span>
+                  <span class="context-menu__label">{{ t(child.label) }}</span>
                   <span v-if="child.shortcut" class="context-menu__shortcut">{{ child.shortcut }}</span>
                 </div>
               </div>

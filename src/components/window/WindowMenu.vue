@@ -6,6 +6,8 @@
  */
 
 import { ref, nextTick, onMounted, onUnmounted } from 'vue';
+import { Button, Input, type InputInstance } from '@chips/components';
+import { t } from '@/services/i18n-service';
 
 interface Props {
   /** 窗口标题 */
@@ -41,7 +43,7 @@ const emit = defineEmits<{
 // 标题编辑状态
 const isEditingTitle = ref(false);
 const editingTitle = ref('');
-const titleInputRef = ref<HTMLInputElement | null>(null);
+const titleInputRef = ref<InputInstance | null>(null);
 const menuRef = ref<HTMLElement | null>(null);
 
 /**
@@ -99,7 +101,8 @@ function handleGlobalClick(e: MouseEvent): void {
   
   const target = e.target as HTMLElement;
   // 如果点击的不是输入框本身，则保存并关闭
-  if (titleInputRef.value && !titleInputRef.value.contains(target)) {
+  const inputElement = titleInputRef.value?.$el;
+  if (inputElement && !inputElement.contains(target)) {
     saveTitle();
   }
 }
@@ -113,7 +116,8 @@ function handleGlobalMousedown(e: MouseEvent): void {
   
   const target = e.target as HTMLElement;
   // 如果点击的不是输入框本身，则保存并关闭
-  if (titleInputRef.value && !titleInputRef.value.contains(target)) {
+  const inputElement = titleInputRef.value?.$el;
+  if (inputElement && !inputElement.contains(target)) {
     saveTitle();
   }
 }
@@ -161,7 +165,7 @@ function handleSettings(): void {
       >
         {{ title }}
       </div>
-      <input
+      <Input
         v-else
         ref="titleInputRef"
         v-model="editingTitle"
@@ -174,41 +178,44 @@ function handleSettings(): void {
 
     <div class="window-menu__right">
       <!-- 锁定/编辑模式切换 -->
-      <button
+      <Button
         v-if="showLock"
         class="window-menu__button"
         :class="{ 'window-menu__button--active': isEditing }"
-        type="button"
-        :title="isEditing ? '切换到查看模式' : '切换到编辑模式'"
-        :aria-label="isEditing ? '切换到查看模式' : '切换到编辑模式'"
+        html-type="button"
+        type="text"
+        :title="isEditing ? t('window_menu.switch_view') : t('window_menu.switch_edit')"
+        :aria-label="isEditing ? t('window_menu.switch_view') : t('window_menu.switch_edit')"
         @click="handleToggleEdit"
       >
         <span class="window-menu__button-icon">{{ isEditing ? '🔓' : '🔒' }}</span>
-      </button>
+      </Button>
 
       <!-- 切换到封面 -->
-      <button
+      <Button
         v-if="showCover"
         class="window-menu__button"
-        type="button"
-        title="切换到封面"
-        aria-label="切换到封面"
+        html-type="button"
+        type="text"
+        :title="t('window_menu.switch_cover')"
+        :aria-label="t('window_menu.switch_cover')"
         @click="handleSwitchToCover"
       >
         <span class="window-menu__button-icon">🖼️</span>
-      </button>
+      </Button>
 
       <!-- 设置 -->
-      <button
+      <Button
         v-if="showSettings"
         class="window-menu__button"
-        type="button"
-        title="设置"
-        aria-label="设置"
+        html-type="button"
+        type="text"
+        :title="t('window_menu.settings')"
+        :aria-label="t('window_menu.settings')"
         @click="handleSettings"
       >
         <span class="window-menu__button-icon">⚙️</span>
-      </button>
+      </Button>
     </div>
   </div>
 </template>
@@ -245,6 +252,9 @@ function handleSettings(): void {
 
 .window-menu__title-input {
   width: 100%;
+}
+
+.window-menu__title-input .chips-input__inner {
   font-size: var(--chips-font-size-sm, 14px);
   font-weight: var(--chips-font-weight-medium, 500);
   border: none;
@@ -255,7 +265,7 @@ function handleSettings(): void {
   color: var(--chips-color-text-primary, #1a1a1a);
 }
 
-.window-menu__title-input:focus {
+.window-menu__title-input .chips-input__inner:focus {
   box-shadow: 0 0 0 2px var(--chips-color-primary, #3b82f6);
 }
 

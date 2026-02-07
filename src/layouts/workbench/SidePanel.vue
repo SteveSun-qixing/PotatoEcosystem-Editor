@@ -6,6 +6,8 @@
  */
 
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { Button } from '@chips/components';
+import { t } from '@/services/i18n-service';
 
 /** 面板位置类型 */
 export type SidePanelPosition = 'left' | 'right';
@@ -226,23 +228,24 @@ defineExpose({
     :style="panelStyle"
     role="complementary"
     :aria-expanded="isExpanded"
-    :aria-label="title || `${position === 'left' ? '左侧' : '右侧'}面板`"
+    :aria-label="title || t(position === 'left' ? 'side_panel.left' : 'side_panel.right')"
   >
     <!-- 面板头部 -->
     <header v-if="title || $slots.header" class="side-panel__header">
       <slot name="header">
         <span class="side-panel__title">{{ title }}</span>
       </slot>
-      <button
-        type="button"
+      <Button
+        html-type="button"
+        type="text"
         class="side-panel__toggle"
-        :aria-label="isExpanded ? '收起面板' : '展开面板'"
+        :aria-label="isExpanded ? t('side_panel.collapse') : t('side_panel.expand')"
         @click="toggleExpand"
       >
         <span class="side-panel__toggle-icon">
           {{ isExpanded ? (position === 'left' ? '◀' : '▶') : (position === 'left' ? '▶' : '◀') }}
         </span>
-      </button>
+      </Button>
     </header>
 
     <!-- 面板内容 -->
@@ -256,7 +259,7 @@ defineExpose({
       class="side-panel__collapsed-trigger"
       role="button"
       tabindex="0"
-      :aria-label="'展开面板'"
+      :aria-label="t('side_panel.expand')"
       @click="expand"
       @keydown.enter="expand"
       @keydown.space.prevent="expand"

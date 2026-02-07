@@ -4,6 +4,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { resourceServiceMock, resetResourceServiceMock } from '../../helpers/resource-service-mock';
+
+vi.mock('@/services/resource-service', () => ({ resourceService: resourceServiceMock }));
 import {
   FileService,
   getFileService,
@@ -12,6 +15,7 @@ import {
   isValidFileName,
   type FileInfo,
 } from '@/core/file-service';
+import { resetWorkspaceService } from '@/core/workspace-service';
 import { createEventEmitter, type EventEmitter } from '@/core/event-manager';
 
 describe('FileService', () => {
@@ -19,6 +23,8 @@ describe('FileService', () => {
   let events: EventEmitter;
 
   beforeEach(() => {
+    resetResourceServiceMock();
+    resetWorkspaceService();
     resetFileService();
     events = createEventEmitter();
     service = new FileService(events);
@@ -73,9 +79,9 @@ describe('FileService', () => {
   });
 
   describe('getWorkingDirectory', () => {
-    it('should return empty string initially (waiting for user selection)', () => {
-      // 设计说明：文件服务初始化为空，等待用户选择工作目录
-      expect(service.getWorkingDirectory()).toBe('');
+    it('should return dev workspace path initially', () => {
+      // 设计说明：开发阶段使用固定的测试工作空间路径
+      expect(service.getWorkingDirectory()).toBe('/ProductFinishedProductTestingSpace/TestWorkspace');
     });
 
     it('should return set working directory', () => {
@@ -101,20 +107,19 @@ describe('FileService', () => {
   });
 
   describe('getFileTree', () => {
-    it('should return empty array initially', async () => {
-      // 设计说明：文件系统初始为空，等待用户操作
+    it('should return empty children array initially (root exists but no files)', async () => {
+      // 设计说明：开发阶段有根目录，但初始时没有文件
       const tree = await service.getFileTree();
       expect(Array.isArray(tree)).toBe(true);
-      expect(tree.length).toBe(0);
+      expect(tree.length).toBe(0); // 根目录的 children 为空
     });
 
     it('should return created files after creation', async () => {
-      // 先设置工作目录并创建根目录结构
-      service.setWorkingDirectory('/workspace');
-      await service.createFolder({ name: 'TestFolder', parentPath: '/workspace' });
+      // 在开发工作空间中创建文件夹
+      const devWorkspace = '/ProductFinishedProductTestingSpace/TestWorkspace';
+      await service.createFolder({ name: 'TestFolder', parentPath: devWorkspace });
       
       // 注意：当前实现中 getFileTree 返回 mockFileSystem[0]?.children
-      // 需要有根目录才能正确添加文件
       const tree = await service.getFileTree();
       expect(Array.isArray(tree)).toBe(true);
     });

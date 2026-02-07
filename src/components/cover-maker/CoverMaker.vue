@@ -6,6 +6,7 @@
  */
 
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { Button, Input, Select, Textarea } from '@chips/components';
 import type {
   CoverCreationMode,
   TemplateStyle,
@@ -15,6 +16,7 @@ import type {
 import TemplateGrid from './TemplateGrid.vue';
 import TemplatePreview from './TemplatePreview.vue';
 import { generateImageCoverHtml } from './templates';
+import { t } from '@/services/i18n-service';
 
 interface Props {
   /** 卡片 ID */
@@ -43,10 +45,10 @@ const currentMode = ref<CoverCreationMode>('template');
 
 /** 模式选项 */
 const modeOptions: { id: CoverCreationMode; name: string; icon: string; description: string }[] = [
-  { id: 'image', name: '选择图片', icon: '🖼️', description: '从本地选择图片文件' },
-  { id: 'html', name: '粘贴代码', icon: '📝', description: '直接粘贴 HTML 代码' },
-  { id: 'zip', name: '上传压缩包', icon: '📦', description: '上传包含网页的 ZIP' },
-  { id: 'template', name: '快速制作', icon: '🎨', description: '选择模板快速生成' },
+  { id: 'image', name: t('cover_maker.mode_image'), icon: '🖼️', description: t('cover_maker.mode_image_desc') },
+  { id: 'html', name: t('cover_maker.mode_html'), icon: '📝', description: t('cover_maker.mode_html_desc') },
+  { id: 'zip', name: t('cover_maker.mode_zip'), icon: '📦', description: t('cover_maker.mode_zip_desc') },
+  { id: 'template', name: t('cover_maker.mode_template'), icon: '🎨', description: t('cover_maker.mode_template_desc') },
 ];
 
 // --- 图片模式状态 ---
@@ -74,12 +76,12 @@ const generatedHtml = ref<string>('');
 
 /** 封面比例选项 */
 const coverRatios = [
-  { value: '1/1', label: '正方形 (1:1)' },
-  { value: '3/4', label: '标准照片 (3:4)' },
-  { value: '4/3', label: '横版照片 (4:3)' },
-  { value: '9/16', label: '手机比例 (9:16)' },
-  { value: '16/9', label: '视频比例 (16:9)' },
-  { value: '2/3', label: '书本比例 (2:3)' },
+  { value: '1/1', label: t('cover_maker.ratio_square') },
+  { value: '3/4', label: t('cover_maker.ratio_standard') },
+  { value: '4/3', label: t('cover_maker.ratio_landscape') },
+  { value: '9/16', label: t('cover_maker.ratio_phone') },
+  { value: '16/9', label: t('cover_maker.ratio_video') },
+  { value: '2/3', label: t('cover_maker.ratio_book') },
 ];
 const selectedRatio = ref('3/4');
 
@@ -306,32 +308,34 @@ onUnmounted(() => {
         <div class="cover-maker">
           <!-- 头部 -->
           <div class="cover-maker__header">
-            <h2 class="cover-maker__title">封面制作器</h2>
-            <button
+            <h2 class="cover-maker__title">{{ t('cover_maker.title') }}</h2>
+            <Button
               class="cover-maker__close"
-              type="button"
-              aria-label="关闭"
+              html-type="button"
+              type="text"
+              :aria-label="t('cover_maker.close')"
               @click="handleCancel"
             >
               ✕
-            </button>
+            </Button>
           </div>
 
           <!-- 模式选择 -->
           <div class="cover-maker__modes">
-            <button
+            <Button
               v-for="mode in modeOptions"
               :key="mode.id"
-              type="button"
               :class="[
                 'cover-maker__mode-btn',
                 { 'cover-maker__mode-btn--active': currentMode === mode.id }
               ]"
+              html-type="button"
+              type="text"
               @click="switchMode(mode.id)"
             >
               <span class="cover-maker__mode-icon">{{ mode.icon }}</span>
               <span class="cover-maker__mode-name">{{ mode.name }}</span>
-            </button>
+            </Button>
           </div>
 
           <!-- 内容区域 -->
@@ -341,7 +345,7 @@ onUnmounted(() => {
               <!-- 图片模式 -->
               <div v-if="currentMode === 'image'" class="cover-maker__section">
                 <p class="cover-maker__description">
-                  选择一张图片作为封面，图片将保存到卡片的 cardcover 文件夹中。
+                  {{ t('cover_maker.image_description') }}
                 </p>
                 
                 <div class="cover-maker__upload-area">
@@ -353,25 +357,26 @@ onUnmounted(() => {
                   />
                   <div v-if="!selectedImage" class="cover-maker__upload-placeholder">
                     <span class="cover-maker__upload-icon">🖼️</span>
-                    <span class="cover-maker__upload-text">点击或拖放图片到此处</span>
-                    <span class="cover-maker__upload-hint">支持 JPG、PNG、GIF、WebP</span>
+                    <span class="cover-maker__upload-text">{{ t('cover_maker.image_upload_text') }}</span>
+                    <span class="cover-maker__upload-hint">{{ t('cover_maker.image_upload_hint') }}</span>
                   </div>
                   <div v-else class="cover-maker__upload-selected">
                     <img
                       v-if="imagePreviewUrl"
                       :src="imagePreviewUrl"
                       class="cover-maker__image-thumb"
-                      alt="预览"
+                      :alt="t('cover_maker.preview_alt')"
                     />
                     <div class="cover-maker__file-info">
                       <span class="cover-maker__file-name">{{ selectedImage.name }}</span>
-                      <button
-                        type="button"
+                      <Button
+                        html-type="button"
+                        type="text"
                         class="cover-maker__file-remove"
                         @click="clearImage"
                       >
-                        移除
-                      </button>
+                        {{ t('cover_maker.remove') }}
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -380,17 +385,16 @@ onUnmounted(() => {
               <!-- HTML 模式 -->
               <div v-if="currentMode === 'html'" class="cover-maker__section">
                 <p class="cover-maker__description">
-                  直接粘贴 HTML 代码作为封面，适合有前端开发经验的用户。
+                  {{ t('cover_maker.html_description') }}
                 </p>
                 
                 <div class="cover-maker__field">
-                  <label class="cover-maker__label">HTML 代码</label>
-                  <textarea
+                  <label class="cover-maker__label">{{ t('cover_maker.html_label') }}</label>
+                  <Textarea
                     v-model="htmlCode"
                     class="cover-maker__code-input"
-                    placeholder="在此粘贴 HTML 代码..."
+                    :placeholder="t('cover_maker.html_placeholder')"
                     rows="12"
-                    spellcheck="false"
                   />
                 </div>
               </div>
@@ -398,7 +402,7 @@ onUnmounted(() => {
               <!-- ZIP 模式 -->
               <div v-if="currentMode === 'zip'" class="cover-maker__section">
                 <p class="cover-maker__description">
-                  上传包含网页文件的 ZIP 压缩包，系统将解压到 cardcover 文件夹，并使用其中的 index.html 作为封面入口。
+                  {{ t('cover_maker.zip_description') }}
                 </p>
                 
                 <div class="cover-maker__upload-area">
@@ -410,20 +414,21 @@ onUnmounted(() => {
                   />
                   <div v-if="!selectedZip" class="cover-maker__upload-placeholder">
                     <span class="cover-maker__upload-icon">📦</span>
-                    <span class="cover-maker__upload-text">点击或拖放 ZIP 文件到此处</span>
-                    <span class="cover-maker__upload-hint">压缩包内需包含 index.html</span>
+                    <span class="cover-maker__upload-text">{{ t('cover_maker.zip_upload_text') }}</span>
+                    <span class="cover-maker__upload-hint">{{ t('cover_maker.zip_upload_hint') }}</span>
                   </div>
                   <div v-else class="cover-maker__upload-selected">
                     <span class="cover-maker__zip-icon">📦</span>
                     <div class="cover-maker__file-info">
                       <span class="cover-maker__file-name">{{ zipFileName }}</span>
-                      <button
-                        type="button"
+                      <Button
+                        html-type="button"
+                        type="text"
                         class="cover-maker__file-remove"
                         @click="clearZip"
                       >
-                        移除
-                      </button>
+                        {{ t('cover_maker.remove') }}
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -431,7 +436,7 @@ onUnmounted(() => {
                 <div class="cover-maker__notice">
                   <span class="cover-maker__notice-icon">ℹ️</span>
                   <span class="cover-maker__notice-text">
-                    ZIP 压缩包将解压到 cardcover/ 目录，封面入口文件必须命名为 index.html
+                    {{ t('cover_maker.zip_notice') }}
                   </span>
                 </div>
               </div>
@@ -439,56 +444,56 @@ onUnmounted(() => {
               <!-- 模板模式 -->
               <div v-if="currentMode === 'template'" class="cover-maker__section">
                 <p class="cover-maker__description">
-                  从预设模板中选择一个风格，填写文字内容，快速生成封面。
+                  {{ t('cover_maker.template_description') }}
                 </p>
 
                 <!-- 模板选择 -->
                 <div class="cover-maker__field">
-                  <label class="cover-maker__label">选择模板风格</label>
+                  <label class="cover-maker__label">{{ t('cover_maker.template_style') }}</label>
                   <TemplateGrid v-model="selectedTemplate" />
                 </div>
 
                 <!-- 内容填写 -->
                 <div class="cover-maker__field">
                   <label class="cover-maker__label">
-                    主标题
+                    {{ t('cover_maker.title') }}
                     <span class="cover-maker__required">*</span>
                   </label>
-                  <input
+                  <Input
                     v-model="templateConfig.title"
                     type="text"
                     class="cover-maker__input"
-                    placeholder="输入封面主标题"
+                    :placeholder="t('cover_maker.title_placeholder')"
                   />
                 </div>
 
                 <div class="cover-maker__field">
-                  <label class="cover-maker__label">副标题</label>
-                  <input
+                  <label class="cover-maker__label">{{ t('cover_maker.subtitle') }}</label>
+                  <Input
                     v-model="templateConfig.subtitle"
                     type="text"
                     class="cover-maker__input"
-                    placeholder="输入副标题（可选）"
+                    :placeholder="t('cover_maker.subtitle_placeholder')"
                   />
                 </div>
 
                 <div class="cover-maker__field-row">
                   <div class="cover-maker__field">
-                    <label class="cover-maker__label">作者</label>
-                    <input
+                    <label class="cover-maker__label">{{ t('cover_maker.author') }}</label>
+                    <Input
                       v-model="templateConfig.author"
                       type="text"
                       class="cover-maker__input"
-                      placeholder="作者名称"
+                      :placeholder="t('cover_maker.author_placeholder')"
                     />
                   </div>
                   <div class="cover-maker__field">
-                    <label class="cover-maker__label">日期</label>
-                    <input
+                    <label class="cover-maker__label">{{ t('cover_maker.date') }}</label>
+                    <Input
                       v-model="templateConfig.date"
                       type="text"
                       class="cover-maker__input"
-                      placeholder="如 2026-02-03"
+                      :placeholder="t('cover_maker.date_placeholder')"
                     />
                   </div>
                 </div>
@@ -498,16 +503,8 @@ onUnmounted(() => {
             <!-- 右侧：预览 -->
             <div class="cover-maker__preview-panel">
               <div class="cover-maker__preview-header">
-                <label class="cover-maker__label">封面比例</label>
-                <select v-model="selectedRatio" class="cover-maker__select">
-                  <option
-                    v-for="ratio in coverRatios"
-                    :key="ratio.value"
-                    :value="ratio.value"
-                  >
-                    {{ ratio.label }}
-                  </option>
-                </select>
+                <label class="cover-maker__label">{{ t('cover_maker.ratio') }}</label>
+                <Select v-model="selectedRatio" class="cover-maker__select" :options="coverRatios" />
               </div>
 
               <TemplatePreview
@@ -537,7 +534,7 @@ onUnmounted(() => {
               <div v-else class="cover-maker__preview-placeholder">
                 <span class="cover-maker__preview-placeholder-icon">👁️</span>
                 <span class="cover-maker__preview-placeholder-text">
-                  {{ currentMode === 'zip' ? '上传 ZIP 后自动预览' : '选择内容后预览' }}
+                  {{ currentMode === 'zip' ? t('cover_maker.preview_zip') : t('cover_maker.preview_default') }}
                 </span>
               </div>
             </div>
@@ -545,21 +542,23 @@ onUnmounted(() => {
 
           <!-- 底部 -->
           <div class="cover-maker__footer">
-            <button
-              type="button"
+            <Button
+              html-type="button"
+              type="text"
               class="cover-maker__btn cover-maker__btn--secondary"
               @click="handleCancel"
             >
-              取消
-            </button>
-            <button
-              type="button"
+              {{ t('cover_maker.cancel') }}
+            </Button>
+            <Button
+              html-type="button"
+              type="primary"
               class="cover-maker__btn cover-maker__btn--primary"
               :disabled="!canSave"
               @click="handleSave"
             >
-              保存封面
-            </button>
+              {{ t('cover_maker.save') }}
+            </Button>
           </div>
         </div>
       </div>
@@ -737,6 +736,11 @@ onUnmounted(() => {
 
 .cover-maker__input,
 .cover-maker__select {
+  width: 100%;
+}
+
+.cover-maker__input .chips-input__inner,
+.cover-maker__select .chips-select__selector {
   padding: 10px 12px;
   border: 1px solid var(--chips-color-border, #e5e5e5);
   border-radius: var(--chips-radius-sm, 4px);
@@ -746,14 +750,18 @@ onUnmounted(() => {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.cover-maker__input:focus,
-.cover-maker__select:focus {
+.cover-maker__input .chips-input__inner:focus,
+.cover-maker__select .chips-select__selector:focus-within {
   outline: none;
   border-color: var(--chips-color-primary, #3b82f6);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .cover-maker__code-input {
+  width: 100%;
+}
+
+.cover-maker__code-input .chips-textarea__inner {
   padding: 12px;
   border: 1px solid var(--chips-color-border, #e5e5e5);
   border-radius: var(--chips-radius-sm, 4px);
@@ -765,7 +773,7 @@ onUnmounted(() => {
   line-height: 1.5;
 }
 
-.cover-maker__code-input:focus {
+.cover-maker__code-input .chips-textarea__inner:focus {
   outline: none;
   border-color: var(--chips-color-primary, #3b82f6);
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);

@@ -6,8 +6,10 @@
  */
 
 import { ref, computed, watch, provide } from 'vue';
+import { Button } from '@chips/components';
 import { useCardStore, useUIStore } from '@/core/state';
 import type { CardWindowConfig } from '@/types';
+import { t } from '@/services/i18n-service';
 
 /** 标签页信息 */
 export interface TabInfo {
@@ -37,7 +39,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   activeTabId: null,
   showTabs: true,
-  emptyText: '选择一张卡片开始预览',
+  emptyText: '',
   emptyIcon: '📄',
 });
 
@@ -75,6 +77,8 @@ const activeWindow = computed((): CardWindowConfig | null => {
 
 /** 是否有打开的标签 */
 const hasTabs = computed(() => tabs.value.length > 0);
+
+const emptyTextValue = computed(() => props.emptyText || t('main_area.empty'));
 
 /**
  * 获取卡片图标
@@ -180,15 +184,16 @@ defineExpose({
         <span v-if="tab.icon" class="main-area__tab-icon">{{ tab.icon }}</span>
         <span class="main-area__tab-title">{{ tab.title }}</span>
         <span v-if="tab.modified" class="main-area__tab-indicator">●</span>
-        <button
+        <Button
           v-if="tab.closable"
-          type="button"
           class="main-area__tab-close"
-          aria-label="关闭标签"
+          html-type="button"
+          type="text"
+          :aria-label="t('main_area.close_tab')"
           @click="closeTab(tab.id, $event)"
         >
           ×
-        </button>
+        </Button>
       </div>
     </div>
 
@@ -216,7 +221,7 @@ defineExpose({
       <template v-else>
         <div class="main-area__empty">
           <span class="main-area__empty-icon">{{ emptyIcon }}</span>
-          <p class="main-area__empty-text">{{ emptyText }}</p>
+          <p class="main-area__empty-text">{{ emptyTextValue }}</p>
           <slot name="empty-actions"></slot>
         </div>
       </template>

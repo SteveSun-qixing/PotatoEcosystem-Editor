@@ -15,9 +15,6 @@ export type { CreateCardOptions, OpenCardOptions, SaveCardOptions } from './edit
 export { SDKConnector, createConnector } from './connector';
 export type {
   SDKConnectorOptions,
-  MockSDKInstance,
-  MockCard,
-  MockBox,
 } from './connector';
 
 // ==================== 事件管理 ====================

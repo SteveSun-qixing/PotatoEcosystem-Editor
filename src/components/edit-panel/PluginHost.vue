@@ -9,22 +9,20 @@
  * - 根据基础卡片类型动态加载对应的编辑器组件
  */
 
-import { ref, computed, watch, onMounted, onUnmounted, shallowRef, nextTick, defineAsyncComponent, markRaw, type Component } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, shallowRef, nextTick, markRaw, type Component } from 'vue';
+import { Button } from '@chips/components';
 import { useCardStore, useEditorStore } from '@/core/state';
 import DefaultEditor from './DefaultEditor.vue';
 import type { EditorPlugin, PluginHostProps } from './types';
-
-// 动态导入富文本编辑器组件（开发阶段直接导入）
-// 生产环境应该通过插件系统加载
-const RichTextEditorComponent = defineAsyncComponent(() => 
-  import('../../../../BasicCardPlugin/Rich-Text-Basic-Card-Plugin/src/editor/RichTextEditor.vue')
-);
-
-/** 已注册的编辑器组件映射 */
-const editorComponents: Record<string, Component> = {
-  'rich-text': RichTextEditorComponent,
-  'RichTextCard': RichTextEditorComponent,
-};
+import { getEditorComponent } from '@/services/plugin-service';
+import { t } from '@/services/i18n-service';
+import { getEditorConnector } from '@/services/sdk-service';
+import {
+  buildCardResourceFullPath,
+  releaseCardResourceUrl,
+  resolveCardResourceUrl,
+  type CardResolvedResource,
+} from '@/services/card-resource-resolver';
 
 // ==================== Props ====================
 interface Props {
@@ -59,11 +57,17 @@ const currentPlugin = shallowRef<EditorPlugin | null>(null);
 /** 插件容器引用 */
 const pluginContainerRef = ref<HTMLElement | null>(null);
 
-/** 是否正在加载 */
-const isLoading = ref(true);
+/** 是否正在加载（内部状态） */
+const isLoadingInternal = ref(true);
+
+/** 是否显示加载状态 */
+const showLoading = computed(() => isLoadingInternal.value);
 
 /** 加载错误 */
 const loadError = ref<Error | null>(null);
+
+/** 已加载的组件类型缓存 */
+const loadedTypes = new Set<string>();
 
 /** 本地配置副本（用于防抖） */
 const localConfig = ref<Record<string, unknown>>({});
@@ -83,8 +87,21 @@ let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
 /** 是否有未保存的更改 */
 const hasUnsavedChanges = ref(false);
 
+/** 编辑器资源解析缓存（fullPath -> resolved resource） */
+const resolvedEditorResources = new Map<string, CardResolvedResource>();
+
 /** 富文本编辑器状态 */
-const editorState = ref({
+const editorState = ref<{
+  content: string;
+  selection: { startOffset: number; endOffset: number; collapsed: boolean } | null;
+  activeFormats: Set<string>;
+  currentBlock: string;
+  canUndo: boolean;
+  canRedo: boolean;
+  isDirty: boolean;
+  wordCount: number;
+  isFocused: boolean;
+}>({
   content: '',
   selection: null,
   activeFormats: new Set<string>(),
@@ -96,7 +113,90 @@ const editorState = ref({
   isFocused: false,
 });
 
+async function resolveEditorResource(fullPath: string): Promise<string> {
+  const cached = resolvedEditorResources.get(fullPath);
+  if (cached) {
+    return cached.url;
+  }
+
+  const resolved = await resolveCardResourceUrl(fullPath);
+  resolvedEditorResources.set(fullPath, resolved);
+  return resolved.url;
+}
+
+async function releaseEditorResource(fullPath: string): Promise<void> {
+  const resolved = resolvedEditorResources.get(fullPath);
+  if (!resolved) return;
+
+  await releaseCardResourceUrl(resolved);
+  resolvedEditorResources.delete(fullPath);
+}
+
+async function releaseEditorResourceByRelativePath(cardPath: string, resourcePath: string): Promise<void> {
+  const fullPath = buildCardResourceFullPath(cardPath, resourcePath);
+  if (resolvedEditorResources.has(fullPath)) {
+    await releaseEditorResource(fullPath);
+    return;
+  }
+
+  const normalizedSuffix = `/${resourcePath.replace(/^\/+/, '')}`;
+  for (const path of resolvedEditorResources.keys()) {
+    if (path.endsWith(normalizedSuffix)) {
+      await releaseEditorResource(path);
+      return;
+    }
+  }
+}
+
+async function releaseAllEditorResources(): Promise<void> {
+  const resources = Array.from(resolvedEditorResources.values());
+  resolvedEditorResources.clear();
+  await Promise.all(resources.map((resource) => releaseCardResourceUrl(resource)));
+}
+
 // ==================== Computed ====================
+
+/**
+ * 编辑器选项（传递给基础卡片编辑器插件）
+ *
+ * 包含 onResolveResource 回调，用于将卡片内相对路径的资源
+ * 通过 SDK ResourceManager 解析为浏览器可显示的 blob URL。
+ * 符合薯片协议规范：所有资源访问通过 SDK 标准路径经内核中央路由。
+ *
+ * 策略：优先使用 SDK ResourceManager（含缓存），失败时直接从 dev-file-server 获取。
+ */
+const editorOptions = computed(() => {
+  const activeCard = cardStore.activeCard;
+  const cardPath = activeCard?.filePath ?? `TestWorkspace/${activeCard?.id ?? 'unknown'}.card`;
+  return {
+    toolbar: true,
+    autoSave: true,
+    cardPath,
+    /**
+     * 资源解析回调：将资源相对路径转换为浏览器可访问的 blob URL
+     *
+     * @param resourcePath - 资源在卡片根目录内的相对路径（如 "photo.jpg"）
+     * @returns 浏览器可访问的 blob URL
+     */
+    onResolveResource: async (resourcePath: string): Promise<string> => {
+      const fullPath = buildCardResourceFullPath(cardPath, resourcePath);
+      try {
+        return await resolveEditorResource(fullPath);
+      } catch {
+        return '';
+      }
+    },
+    /**
+     * 资源释放回调：通知宿主层释放对应资源句柄
+     *
+     * @param resourcePath - 资源在卡片根目录内的相对路径
+     */
+    onReleaseResolvedResource: async (resourcePath: string): Promise<void> => {
+      await releaseEditorResourceByRelativePath(cardPath, resourcePath);
+    },
+  };
+});
+
 /** 是否使用默认编辑器 */
 const useDefaultEditor = computed(() => {
   return !currentPlugin.value && !currentEditorComponent.value;
@@ -111,20 +211,40 @@ const currentBaseCard = computed(() => {
 
 /** 加载状态文本 */
 const loadingText = computed(() => {
-  return 'plugin_host.loading'; // t('plugin_host.loading')
+  return t('plugin_host.loading');
 });
 
 /** 错误状态文本 */
 const errorText = computed(() => {
-  return loadError.value?.message ?? 'plugin_host.error'; // t('plugin_host.error')
+  return loadError.value?.message ?? t('plugin_host.error');
 });
 
 // ==================== Methods ====================
 /**
+ * 开始加载（延迟显示加载状态）
+ */
+function startLoading(): void {
+  isLoadingInternal.value = true;
+}
+
+/**
+ * 结束加载
+ */
+function endLoading(): void {
+  isLoadingInternal.value = false;
+}
+
+/**
  * 加载编辑器插件
  */
 async function loadPlugin(): Promise<void> {
-  isLoading.value = true;
+  // 如果是已加载过的类型，不显示加载状态（组件已缓存）
+  const isFirstLoad = !loadedTypes.has(props.cardType);
+  
+  if (isFirstLoad) {
+    startLoading();
+  }
+  
   loadError.value = null;
   
   try {
@@ -132,35 +252,21 @@ async function loadPlugin(): Promise<void> {
     await unloadPlugin();
     
     // 检查是否有注册的编辑器组件
-    const component = editorComponents[props.cardType];
+    const component = await getEditorComponent(props.cardType);
     if (component) {
       // 使用注册的 Vue 组件
       currentEditorComponent.value = markRaw(component);
       currentPlugin.value = null;
       emit('plugin-loaded', null);
+      
+      // 标记为已加载
+      loadedTypes.add(props.cardType);
       console.log('[PluginHost] 加载编辑器组件:', props.cardType);
     } else {
-      // 尝试加载插件
-      const plugin = await getEditorPlugin(props.cardType);
-      
-      if (plugin && pluginContainerRef.value && 'mount' in plugin) {
-        // 挂载插件
-        await plugin.mount(pluginContainerRef.value, props.config);
-        
-        // 设置配置变更回调
-        if (plugin.onConfigChange) {
-          plugin.onConfigChange(handlePluginConfigChange);
-        }
-        
-        currentPlugin.value = plugin;
-        currentEditorComponent.value = null;
-        emit('plugin-loaded', plugin);
-      } else {
-        // 没有找到插件，使用默认编辑器
-        currentPlugin.value = null;
-        currentEditorComponent.value = null;
-        emit('plugin-loaded', null);
-      }
+      // 没有找到插件，使用默认编辑器
+      currentPlugin.value = null;
+      currentEditorComponent.value = null;
+      emit('plugin-loaded', null);
     }
     
     // 初始化本地配置
@@ -170,7 +276,7 @@ async function loadPlugin(): Promise<void> {
     emit('plugin-error', loadError.value);
     console.error('[PluginHost] 加载插件失败:', error);
   } finally {
-    isLoading.value = false;
+    endLoading();
   }
 }
 
@@ -191,27 +297,13 @@ async function unloadPlugin(): Promise<void> {
     }
     currentPlugin.value = null;
   }
+
+  await releaseAllEditorResources();
   
   // 清空容器
   if (pluginContainerRef.value) {
     pluginContainerRef.value.innerHTML = '';
   }
-}
-
-/**
- * 获取编辑器插件
- * 检查是否有注册的编辑器组件
- */
-async function getEditorPlugin(cardType: string): Promise<EditorPlugin | null> {
-  // 检查是否有注册的编辑器组件
-  if (editorComponents[cardType]) {
-    // 返回一个标记，表示使用注册的组件
-    return {
-      type: 'component',
-      component: editorComponents[cardType],
-    } as unknown as EditorPlugin;
-  }
-  return null;
 }
 
 /** 当前使用的编辑器组件 */
@@ -251,6 +343,95 @@ function handleEditorContentChange(html: string): void {
   };
   editorState.value.content = html;
   editorState.value.isDirty = true;
+  editorState.value.wordCount = html.replace(/<[^>]*>/g, '').length;
+  hasUnsavedChanges.value = true;
+  debouncedEmitChange();
+}
+
+/**
+ * 处理选区变化
+ */
+function handleSelectionChange(
+  selection: { startOffset: number; endOffset: number; collapsed: boolean } | null,
+  formats: Set<string>,
+  block: string
+): void {
+  editorState.value.selection = selection;
+  editorState.value.activeFormats = formats;
+  editorState.value.currentBlock = block;
+}
+
+/**
+ * 处理编辑器聚焦
+ */
+function handleEditorFocus(): void {
+  editorState.value.isFocused = true;
+}
+
+/**
+ * 处理编辑器失焦
+ */
+function handleEditorBlur(): void {
+  editorState.value.isFocused = false;
+}
+
+/**
+ * 处理图片卡片编辑器配置变更
+ *
+ * 当图片编辑器传递配置时，可能包含 _pendingFiles 字段，
+ * 其中记录了用户刚上传的图片文件（File 对象）。
+ * PluginHost 负责通过 chips:// 协议将这些文件写入卡片文件夹根目录，
+ * 然后清除 _pendingFiles 字段，只保留纯净的配置数据。
+ *
+ * 符合薯片协议规范：所有资源写入通过内核的 resource.write 服务完成。
+ */
+async function handleImageCardConfigChange(newConfig: Record<string, unknown>): Promise<void> {
+  // 提取待上传的文件
+  const pendingFiles = newConfig._pendingFiles as Record<string, File> | undefined;
+
+  // 从配置中移除 _pendingFiles（不应保存到卡片配置文件）
+  const cleanConfig = { ...newConfig };
+  delete cleanConfig._pendingFiles;
+
+  // 如果有待上传的文件，通过 chips:// 协议写入卡片文件夹
+  if (pendingFiles && Object.keys(pendingFiles).length > 0) {
+    const activeCard = cardStore.activeCard;
+    if (activeCard) {
+      const cardPath = activeCard.filePath ?? `TestWorkspace/${activeCard.id}.card`;
+
+      try {
+        const connector = await getEditorConnector();
+
+        for (const [relativeFilePath, file] of Object.entries(pendingFiles)) {
+          try {
+            // 将 File 对象转换为 ArrayBuffer
+            const arrayBuffer = await file.arrayBuffer();
+            // 通过 chips:// 协议写入卡片文件夹根目录
+            const chipsUri = `chips://card/${cardPath}/${relativeFilePath}`;
+            const response = await connector.request({
+              service: 'resource.write',
+              method: 'write',
+              payload: {
+                uri: chipsUri,
+                data: arrayBuffer,
+              },
+            });
+            if (response.success) {
+              console.log(`[PluginHost] Resource saved via chips://: ${chipsUri}`);
+            } else {
+              console.error(`[PluginHost] Failed to save resource: ${chipsUri}`, response.error);
+            }
+          } catch (error) {
+            console.error(`[PluginHost] Failed to save resource: ${relativeFilePath}`, error);
+          }
+        }
+      } catch (error) {
+        console.error('[PluginHost] Failed to get connector for resource write:', error);
+      }
+    }
+  }
+
+  localConfig.value = { ...cleanConfig };
   hasUnsavedChanges.value = true;
   debouncedEmitChange();
 }
@@ -388,7 +569,7 @@ onUnmounted(async () => {
 
 // ==================== Expose ====================
 defineExpose({
-  isLoading,
+  isLoading: isLoadingInternal,
   loadError,
   currentPlugin,
   hasUnsavedChanges,
@@ -399,10 +580,10 @@ defineExpose({
 
 <template>
   <div class="plugin-host">
-    <!-- 加载状态 -->
+    <!-- 加载状态（延迟显示，防止闪烁） -->
     <Transition name="plugin-host-fade">
       <div
-        v-if="isLoading"
+        v-if="showLoading"
         class="plugin-host__loading"
       >
         <div class="plugin-host__spinner"></div>
@@ -413,37 +594,44 @@ defineExpose({
     <!-- 错误状态 -->
     <Transition name="plugin-host-fade">
       <div
-        v-if="!isLoading && loadError"
+        v-if="!showLoading && loadError"
         class="plugin-host__error"
       >
         <div class="plugin-host__error-icon">⚠️</div>
         <p class="plugin-host__error-text">{{ errorText }}</p>
-        <button
+        <Button
           class="plugin-host__retry-btn"
-          type="button"
+          html-type="button"
+          type="default"
           @click="reload"
         >
-          重试
-        </button>
+          {{ t('plugin_host.retry') }}
+        </Button>
       </div>
     </Transition>
     
     <!-- 注册的编辑器组件 -->
     <div
-      v-if="!isLoading && !loadError && usePluginComponent && currentEditorComponent"
+      v-if="!isLoadingInternal && !loadError && usePluginComponent && currentEditorComponent"
       class="plugin-host__editor-component"
     >
       <component
         :is="currentEditorComponent"
+        :config="localConfig"
         :initial-content="(localConfig.content_text as string) || ''"
-        :options="{ toolbar: true, autoSave: true, placeholder: '在此输入内容...' }"
+        :options="editorOptions"
+        :state="editorState"
         :on-content-change="handleEditorContentChange"
+        :on-selection-change="handleSelectionChange"
+        :on-focus="handleEditorFocus"
+        :on-blur="handleEditorBlur"
+        :on-update-config="handleImageCardConfigChange"
       />
     </div>
     
     <!-- 插件容器（用于挂载原生插件） -->
     <div
-      v-show="!isLoading && !loadError && currentPlugin && !usePluginComponent"
+      v-show="!isLoadingInternal && !loadError && currentPlugin && !usePluginComponent"
       ref="pluginContainerRef"
       class="plugin-host__container"
     ></div>
@@ -451,7 +639,7 @@ defineExpose({
     <!-- 默认编辑器 -->
     <Transition name="plugin-host-fade">
       <div
-        v-if="!isLoading && !loadError && useDefaultEditor && currentBaseCard"
+        v-if="!isLoadingInternal && !loadError && useDefaultEditor && currentBaseCard"
         class="plugin-host__default-editor"
       >
         <DefaultEditor
@@ -467,7 +655,7 @@ defineExpose({
       <div
         v-if="hasUnsavedChanges"
         class="plugin-host__unsaved-indicator"
-        title="有未保存的更改"
+        :title="t('plugin_host.unsaved')"
       >
         <span class="plugin-host__unsaved-dot"></span>
       </div>

@@ -5,6 +5,8 @@
  */
 
 import { defineAsyncComponent, h, type Component, type AsyncComponentOptions } from 'vue';
+import { Button } from '@chips/components';
+import { t } from '@/services/i18n-service';
 
 /**
  * 懒加载选项
@@ -37,7 +39,7 @@ interface ErrorComponentProps {
  * 创建加载状态组件
  * @param text - 加载文本
  */
-function createLoadingComponent(text = 'Loading...'): Component<LoadingComponentProps> {
+function createLoadingComponent(text = t('lazy_load.loading')): Component<LoadingComponentProps> {
   return {
     name: 'LazyLoadingPlaceholder',
     props: {
@@ -54,8 +56,8 @@ function createLoadingComponent(text = 'Loading...'): Component<LoadingComponent
               alignItems: 'center',
               justifyContent: 'center',
               padding: '20px',
-              color: '#666',
-              fontSize: '14px',
+              color: 'var(--chips-color-text-secondary, #666666)',
+              fontSize: 'var(--chips-font-size-sm, 14px)',
             },
           },
           [
@@ -89,29 +91,36 @@ function createErrorComponent(): Component<ErrorComponentProps> {
               alignItems: 'center',
               justifyContent: 'center',
               padding: '20px',
-              color: '#ef4444',
-              fontSize: '14px',
+              color: 'var(--chips-color-error, #ef4444)',
+              fontSize: 'var(--chips-font-size-sm, 14px)',
             },
           },
           [
-            h('span', { style: { marginBottom: '8px' } }, '❌ 加载失败'),
-            h('span', { style: { fontSize: '12px', color: '#666' } }, props.error?.message || ''),
+            h('span', { style: { marginBottom: '8px' } }, `❌ ${t('lazy_load.error')}`),
+            h(
+              'span',
+              {
+                style: {
+                  fontSize: 'var(--chips-font-size-xs, 12px)',
+                  color: 'var(--chips-color-text-secondary, #666666)',
+                },
+              },
+              props.error?.message || ''
+            ),
             props.retry &&
               h(
-                'button',
+                Button,
                 {
                   onClick: props.retry,
                   style: {
                     marginTop: '12px',
-                    padding: '6px 12px',
-                    backgroundColor: '#3b82f6',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
                   },
+                  type: 'primary',
+                  htmlType: 'button',
                 },
-                '重试'
+                {
+                  default: () => t('lazy_load.retry'),
+                }
               ),
           ]
         );

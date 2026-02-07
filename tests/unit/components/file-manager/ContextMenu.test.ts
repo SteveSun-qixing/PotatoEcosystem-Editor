@@ -110,7 +110,7 @@ describe('ContextMenu', () => {
       const items = wrapper.findAll('.context-menu__item');
       const labels = items.map((item) => item.find('.context-menu__label').text());
       
-      expect(labels).toContain('file.new');
+      expect(labels).toContain('新建');
     });
 
     it('should show file operations when files selected', () => {
@@ -131,11 +131,11 @@ describe('ContextMenu', () => {
       const items = wrapper.findAll('.context-menu__item');
       const labels = items.map((item) => item.find('.context-menu__label').text());
       
-      expect(labels).toContain('file.open');
-      expect(labels).toContain('common.cut');
-      expect(labels).toContain('common.copy');
-      expect(labels).toContain('file.rename');
-      expect(labels).toContain('common.delete');
+      expect(labels).toContain('打开');
+      expect(labels).toContain('剪切');
+      expect(labels).toContain('复制');
+      expect(labels).toContain('重命名');
+      expect(labels).toContain('删除');
     });
 
     it('should disable open when multiple files selected', () => {
@@ -154,7 +154,7 @@ describe('ContextMenu', () => {
       });
 
       const openItem = wrapper.findAll('.context-menu__item').find((item) => 
-        item.find('.context-menu__label').text() === 'file.open'
+        item.find('.context-menu__label').text() === '打开'
       );
 
       expect(openItem?.classes()).toContain('context-menu__item--disabled');
@@ -176,7 +176,7 @@ describe('ContextMenu', () => {
       });
 
       const renameItem = wrapper.findAll('.context-menu__item').find((item) => 
-        item.find('.context-menu__label').text() === 'file.rename'
+        item.find('.context-menu__label').text() === '重命名'
       );
 
       expect(renameItem?.classes()).toContain('context-menu__item--disabled');
@@ -198,7 +198,7 @@ describe('ContextMenu', () => {
       });
 
       const pasteItem = wrapper.findAll('.context-menu__item').find((item) => 
-        item.find('.context-menu__label').text() === 'common.paste'
+        item.find('.context-menu__label').text() === '粘贴'
       );
 
       expect(pasteItem?.classes()).toContain('context-menu__item--disabled');
@@ -220,7 +220,7 @@ describe('ContextMenu', () => {
       });
 
       const pasteItem = wrapper.findAll('.context-menu__item').find((item) => 
-        item.find('.context-menu__label').text() === 'common.paste'
+        item.find('.context-menu__label').text() === '粘贴'
       );
 
       expect(pasteItem?.classes()).not.toContain('context-menu__item--disabled');
@@ -245,7 +245,7 @@ describe('ContextMenu', () => {
 
       // Find a non-disabled item without children
       const refreshItem = wrapper.findAll('.context-menu__item').find((item) => 
-        item.find('.context-menu__label').text() === 'file.refresh'
+        item.find('.context-menu__label').text() === '刷新'
       );
 
       await refreshItem?.trigger('click');
@@ -270,7 +270,7 @@ describe('ContextMenu', () => {
       });
 
       const refreshItem = wrapper.findAll('.context-menu__item').find((item) => 
-        item.find('.context-menu__label').text() === 'file.refresh'
+        item.find('.context-menu__label').text() === '刷新'
       );
 
       await refreshItem?.trigger('click');
@@ -294,7 +294,7 @@ describe('ContextMenu', () => {
       });
 
       const pasteItem = wrapper.findAll('.context-menu__item').find((item) => 
-        item.find('.context-menu__label').text() === 'common.paste'
+        item.find('.context-menu__label').text() === '粘贴'
       );
 
       await pasteItem?.trigger('click');
@@ -319,7 +319,7 @@ describe('ContextMenu', () => {
       });
 
       const newItem = wrapper.findAll('.context-menu__item').find((item) => 
-        item.find('.context-menu__label').text() === 'file.new'
+        item.find('.context-menu__label').text() === '新建'
       );
 
       await newItem?.trigger('mouseenter');
@@ -343,14 +343,14 @@ describe('ContextMenu', () => {
 
       // Hover to show submenu
       const newItem = wrapper.findAll('.context-menu__item').find((item) => 
-        item.find('.context-menu__label').text() === 'file.new'
+        item.find('.context-menu__label').text() === '新建'
       );
       await newItem?.trigger('mouseenter');
 
       // Click submenu item
       const submenu = wrapper.find('.context-menu__submenu');
       const newCardItem = submenu.findAll('.context-menu__item').find((item) => 
-        item.find('.context-menu__label').text() === 'file.new_card'
+        item.find('.context-menu__label').text() === '新建卡片'
       );
       await newCardItem?.trigger('click');
 

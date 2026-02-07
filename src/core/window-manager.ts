@@ -13,7 +13,8 @@ import type {
   WindowSize,
   WindowState,
 } from '@/types';
-import { generateId } from '@/utils';
+import { generateScopedId } from '@/utils';
+import { t } from '@/services/i18n-service';
 
 /**
  * 窗口管理器类
@@ -80,14 +81,14 @@ export class WindowManager {
     const uiStore = this.getUIStore();
     const cardStore = this.getCardStore();
 
-    const windowId = generateId('card-window');
+    const windowId = generateScopedId('card-window');
     const position = this.getNextWindowPosition();
     const cardInfo = cardStore.openCards.get(cardId);
 
     const config: CardWindowConfig = {
       id: windowId,
       type: 'card',
-      title: cardInfo?.metadata.name || options?.title || '未命名卡片',
+      title: cardInfo?.metadata.name || options?.title || t('common.untitled_card'),
       cardId,
       position: options?.position ?? position,
       size: options?.size ?? { width: 400, height: 600 },
@@ -117,7 +118,7 @@ export class WindowManager {
   ): string {
     const uiStore = this.getUIStore();
 
-    const windowId = generateId('tool-window');
+    const windowId = generateScopedId('tool-window');
     const position = this.getNextWindowPosition();
 
     const config: ToolWindowConfig = {
@@ -250,7 +251,7 @@ export class WindowManager {
    */
   getWindow(windowId: string): WindowConfig | undefined {
     const uiStore = this.getUIStore();
-    return uiStore.windows.get(windowId);
+    return uiStore.getWindow(windowId);
   }
 
   /**
@@ -296,7 +297,7 @@ export class WindowManager {
    */
   hasWindow(windowId: string): boolean {
     const uiStore = this.getUIStore();
-    return uiStore.windows.has(windowId);
+    return uiStore.getWindow(windowId) !== undefined;
   }
 
   /**

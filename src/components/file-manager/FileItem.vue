@@ -6,6 +6,7 @@
  */
 
 import { ref, computed, watch, nextTick } from 'vue';
+import { Button, Input, type InputInstance } from '@chips/components';
 import type { FileInfo } from '@/core/file-service';
 
 interface Props {
@@ -41,10 +42,12 @@ const emit = defineEmits<{
   rename: [file: FileInfo, newName: string];
   /** 取消重命名 */
   'rename-cancel': [];
+  /** 开始拖放文件 */
+  dragstart: [file: FileInfo, event: DragEvent];
 }>();
 
 /** 重命名输入框引用 */
-const renameInput = ref<HTMLInputElement | null>(null);
+const renameInput = ref<InputInstance | null>(null);
 /** 重命名输入值 */
 const renameValue = ref('');
 
@@ -170,6 +173,13 @@ function handleRenameKeydown(event: KeyboardEvent): void {
     cancelRename();
   }
 }
+
+/**
+ * 处理拖拽开始
+ */
+function handleDragStart(event: DragEvent): void {
+  emit('dragstart', props.file, event);
+}
 </script>
 
 <template>
@@ -181,14 +191,18 @@ function handleRenameKeydown(event: KeyboardEvent): void {
       'file-item--renaming': renaming,
     }"
     :style="indentStyle"
+    :draggable="!renaming && !file.isDirectory && (file.type === 'card' || file.type === 'box')"
     @click="handleClick"
     @dblclick="handleDoubleClick"
     @contextmenu="handleContextMenu"
+    @dragstart="handleDragStart"
   >
     <!-- 展开/收起箭头 -->
-    <button
+    <Button
       v-if="file.isDirectory"
       class="file-item__toggle"
+      html-type="button"
+      type="text"
       @click="handleToggle"
     >
       <span
@@ -197,7 +211,7 @@ function handleRenameKeydown(event: KeyboardEvent): void {
       >
         ▶
       </span>
-    </button>
+    </Button>
     <span v-else class="file-item__toggle-placeholder"></span>
 
     <!-- 文件图标 -->
@@ -205,7 +219,7 @@ function handleRenameKeydown(event: KeyboardEvent): void {
 
     <!-- 文件名 -->
     <template v-if="renaming">
-      <input
+      <Input
         ref="renameInput"
         v-model="renameValue"
         class="file-item__rename-input"
@@ -303,6 +317,9 @@ function handleRenameKeydown(event: KeyboardEvent): void {
 .file-item__rename-input {
   flex: 1;
   min-width: 0;
+}
+
+.file-item__rename-input .chips-input__inner {
   padding: 2px 4px;
   font-size: var(--chips-font-size-sm, 14px);
   border: 1px solid var(--chips-color-primary, #1890ff);
@@ -311,7 +328,7 @@ function handleRenameKeydown(event: KeyboardEvent): void {
   background-color: var(--chips-color-bg-primary, #fff);
 }
 
-.file-item__rename-input:focus {
+.file-item__rename-input .chips-input__inner:focus {
   box-shadow: 0 0 0 2px var(--chips-color-primary-light, rgba(24, 144, 255, 0.2));
 }
 

@@ -4,6 +4,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { resourceServiceMock, resetResourceServiceMock } from '../helpers/resource-service-mock';
+
+vi.mock('@/services/resource-service', () => ({ resourceService: resourceServiceMock }));
 import { setActivePinia, createPinia } from 'pinia';
 import { createEventEmitter, EventEmitter } from '@/core/event-manager';
 import {
@@ -13,13 +16,16 @@ import {
   isValidFileName,
   getFileType,
 } from '@/core/file-service';
+import { resetWorkspaceService } from '@/core/workspace-service';
 
 describe('文件管理操作', () => {
   let fileService: FileService;
   let eventEmitter: EventEmitter;
 
   beforeEach(() => {
+    resetResourceServiceMock();
     setActivePinia(createPinia());
+    resetWorkspaceService();
     resetFileService();
     eventEmitter = createEventEmitter();
     fileService = getFileService(eventEmitter);
@@ -67,9 +73,9 @@ describe('文件管理操作', () => {
   });
 
   describe('工作目录操作', () => {
-    it('应获取初始空工作目录', () => {
-      // 设计说明：初始化为空，等待用户选择工作目录
-      expect(fileService.getWorkingDirectory()).toBe('');
+    it('应获取开发阶段默认工作目录', () => {
+      // 设计说明：开发阶段使用固定的测试工作空间路径
+      expect(fileService.getWorkingDirectory()).toBe('/ProductFinishedProductTestingSpace/TestWorkspace');
     });
 
     it('应设置工作目录', () => {

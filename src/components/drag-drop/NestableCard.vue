@@ -7,6 +7,7 @@
 
 import { ref, computed } from 'vue';
 import { useCardNest, type CardNestDragData } from '@/core';
+import { t } from '@/services/i18n-service';
 import DropHighlight from './DropHighlight.vue';
 
 const props = withDefaults(
@@ -227,7 +228,7 @@ function handleKeyDown(event: KeyboardEvent): void {
           class="nestable-card__hint"
         >
           <span class="nestable-card__hint-icon">📥</span>
-          <span class="nestable-card__hint-text">释放以嵌套卡片</span>
+          <span class="nestable-card__hint-text">{{ t('nestable_card.hint') }}</span>
         </div>
       </Transition>
 
@@ -239,7 +240,11 @@ function handleKeyDown(event: KeyboardEvent): void {
         >
           <span class="nestable-card__hint-icon">🚫</span>
           <span class="nestable-card__hint-text">
-            {{ currentLevel >= maxNestLevel - 1 ? '已达最大嵌套层级' : '无法嵌套到此卡片' }}
+            {{
+              currentLevel >= maxNestLevel - 1
+                ? t('nestable_card.max_level')
+                : t('nestable_card.cannot_nest')
+            }}
           </span>
         </div>
       </Transition>
@@ -278,7 +283,7 @@ function handleKeyDown(event: KeyboardEvent): void {
   gap: var(--chips-spacing-sm, 8px);
   padding: var(--chips-spacing-md, 12px) var(--chips-spacing-lg, 16px);
   background-color: var(--chips-color-primary, #1890ff);
-  color: white;
+  color: var(--chips-color-on-primary, #ffffff);
   border-radius: var(--chips-border-radius-base, 8px);
   box-shadow: var(--chips-shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.15));
   pointer-events: none;
@@ -287,6 +292,7 @@ function handleKeyDown(event: KeyboardEvent): void {
 
 .nestable-card__hint--error {
   background-color: var(--chips-color-error, #ff4d4f);
+  color: var(--chips-color-on-error, #ffffff);
 }
 
 .nestable-card__hint-icon {

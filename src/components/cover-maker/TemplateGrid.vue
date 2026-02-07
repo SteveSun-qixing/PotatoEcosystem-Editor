@@ -8,6 +8,7 @@
 import { computed } from 'vue';
 import type { CoverTemplate, TemplateStyle } from './types';
 import { templates } from './templates';
+import { t } from '@/services/i18n-service';
 
 interface Props {
   /** 当前选中的模板 ID */
@@ -57,8 +58,8 @@ function isSelected(templateId: TemplateStyle): boolean {
         <span class="template-grid__preview-text">Aa</span>
       </div>
       <div class="template-grid__info">
-        <span class="template-grid__name">{{ template.name }}</span>
-        <span class="template-grid__description">{{ template.description }}</span>
+        <span class="template-grid__name">{{ t(template.name) }}</span>
+        <span class="template-grid__description">{{ t(template.description) }}</span>
       </div>
     </div>
   </div>

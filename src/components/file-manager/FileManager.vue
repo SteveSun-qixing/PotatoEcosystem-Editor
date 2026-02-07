@@ -10,25 +10,28 @@
  * - 文件列表从 workspaceService 获取
  */
 
-import { ref, computed, onMounted, onUnmounted, watch, inject } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { Button, Input, type InputInstance } from '@chips/components';
 import FileTree from './FileTree.vue';
 import ContextMenu from './ContextMenu.vue';
 import {
   type FileInfo,
   type ClipboardData,
   getFileService,
-  isValidFileName,
 } from '@/core/file-service';
 import { useWorkspaceService, type WorkspaceFile } from '@/core/workspace-service';
+import { resourceService } from '@/services/resource-service';
 import { createEventEmitter } from '@/core/event-manager';
+import { t } from '@/services/i18n-service';
+import { useGlobalDragCreate, type DragData } from '@/components/card-box-library';
 
 interface Props {
   /** 初始工作目录 */
   workingDirectory?: string;
 }
 
-const props = withDefaults(defineProps<Props>(), {
-  workingDirectory: '/workspace',
+withDefaults(defineProps<Props>(), {
+  workingDirectory: resourceService.workspaceRoot,
 });
 
 const emit = defineEmits<{
@@ -42,6 +45,7 @@ const emit = defineEmits<{
 
 // 获取工作区服务
 const workspaceService = useWorkspaceService();
+const dragCreate = useGlobalDragCreate();
 
 // 获取文件服务实例（用于文件操作）
 const events = createEventEmitter();
@@ -51,7 +55,7 @@ const fileService = getFileService(events);
  * 将工作区文件转换为文件信息格式
  */
 function convertWorkspaceFileToFileInfo(wsFile: WorkspaceFile): FileInfo {
-  return {
+  const baseFile: FileInfo = {
     id: wsFile.id,
     name: wsFile.name,
     path: wsFile.path,
@@ -60,9 +64,17 @@ function convertWorkspaceFileToFileInfo(wsFile: WorkspaceFile): FileInfo {
     createdAt: wsFile.createdAt,
     modifiedAt: wsFile.modifiedAt,
     isDirectory: wsFile.type === 'folder',
-    children: wsFile.children?.map(convertWorkspaceFileToFileInfo),
-    expanded: wsFile.expanded,
   };
+
+  if (wsFile.children && wsFile.children.length > 0) {
+    baseFile.children = wsFile.children.map(convertWorkspaceFileToFileInfo);
+  }
+
+  if (wsFile.expanded !== undefined) {
+    baseFile.expanded = wsFile.expanded;
+  }
+
+  return baseFile;
 }
 
 /** 文件树数据 */
@@ -70,7 +82,7 @@ const files = ref<FileInfo[]>([]);
 /** 选中的文件路径 */
 const selectedPaths = ref<string[]>([]);
 /** 选中的文件 */
-const selectedFiles = computed(() => 
+const selectedFiles = computed(() =>
   files.value.length > 0
     ? flattenAllFiles(files.value).filter((f) => selectedPaths.value.includes(f.path))
     : []
@@ -80,13 +92,15 @@ const renamingPath = ref<string | null>(null);
 /** 搜索关键词 */
 const searchQuery = ref('');
 /** 搜索输入框引用 */
-const searchInputRef = ref<HTMLInputElement | null>(null);
+const searchInputRef = ref<InputInstance | null>(null);
 /** 搜索结果 */
 const searchResults = ref<FileInfo[]>([]);
 /** 是否正在搜索 */
 const isSearching = computed(() => searchQuery.value.trim().length > 0);
+/** 搜索框是否展开 */
+const isSearchExpanded = ref(false);
 /** 显示的文件列表 */
-const displayFiles = computed(() => 
+const displayFiles = computed(() =>
   isSearching.value ? searchResults.value : files.value
 );
 /** 是否正在加载 */
@@ -100,7 +114,7 @@ const contextMenu = ref({
 /** 剪贴板数据 */
 const clipboard = ref<ClipboardData | null>(null);
 /** 是否有剪贴板内容 */
-const hasClipboard = computed(() => 
+const hasClipboard = computed(() =>
   clipboard.value !== null && clipboard.value.files.length > 0
 );
 
@@ -143,13 +157,6 @@ async function loadFiles(): Promise<void> {
   }
 }
 
-/**
- * 刷新文件列表
- */
-async function handleRefresh(): Promise<void> {
-  await workspaceService.refresh();
-  await loadFiles();
-}
 
 // 监听工作区文件变化
 watch(
@@ -178,7 +185,7 @@ function handleOpen(file: FileInfo): void {
 /**
  * 处理右键菜单
  */
-function handleContextMenu(file: FileInfo, event: MouseEvent): void {
+function handleContextMenu(_file: FileInfo, event: MouseEvent): void {
   contextMenu.value = {
     visible: true,
     x: event.clientX,
@@ -235,11 +242,54 @@ async function handleSearch(): Promise<void> {
 }
 
 /**
+ * 处理文件拖放开始
+ * 支持将卡片/箱子文件拖到桌面层
+ */
+function handleFileDragStart(file: FileInfo, event: DragEvent): void {
+  if (file.type !== 'card' && file.type !== 'box') {
+    return;
+  }
+
+  const dragData: DragData = {
+    type: 'workspace-file',
+    fileId: file.id,
+    fileType: file.type,
+    filePath: file.path,
+    name: file.name,
+  };
+
+  dragCreate.startDrag(dragData, event);
+}
+
+/**
  * 清除搜索
  */
 function clearSearch(): void {
   searchQuery.value = '';
   searchResults.value = [];
+}
+
+/**
+ * 切换搜索框显示状态
+ */
+async function toggleSearch(): Promise<void> {
+  isSearchExpanded.value = !isSearchExpanded.value;
+  if (isSearchExpanded.value) {
+    await nextTick();
+    searchInputRef.value?.focus();
+  } else {
+    clearSearch();
+  }
+}
+
+/**
+ * 关闭搜索框
+ */
+function closeSearch(): void {
+  if (isSearchExpanded.value) {
+    isSearchExpanded.value = false;
+    clearSearch();
+  }
 }
 
 /**
@@ -274,18 +324,6 @@ async function handleContextMenuAction(actionId: string, targetFiles: FileInfo[]
         await loadFiles();
         renamingPath.value = result.file.path;
         emit('create-box', result.file);
-      }
-      break;
-    }
-
-    case 'new-folder': {
-      const result = await fileService.createFolder({
-        name: 'file.new_folder_name',
-        parentPath: targetPath,
-      });
-      if (result.success && result.file) {
-        await loadFiles();
-        renamingPath.value = result.file.path;
       }
       break;
     }
@@ -326,10 +364,6 @@ async function handleContextMenuAction(actionId: string, targetFiles: FileInfo[]
       await loadFiles();
       break;
 
-    case 'refresh':
-      await handleRefresh();
-      break;
-
     case 'reveal':
       // TODO: 实现在资源管理器中显示
       console.log('Reveal in finder:', targetFiles[0]?.path);
@@ -363,11 +397,6 @@ function handleKeyDown(event: KeyboardEvent): void {
       }
       break;
 
-    case 'F5':
-      event.preventDefault();
-      handleRefresh();
-      break;
-
     case 'c':
       if (modKey && selectedFiles.value.length > 0) {
         event.preventDefault();
@@ -392,7 +421,11 @@ function handleKeyDown(event: KeyboardEvent): void {
     case 'f':
       if (modKey) {
         event.preventDefault();
-        searchInputRef.value?.focus();
+        if (!isSearchExpanded.value) {
+          toggleSearch();
+        } else {
+          searchInputRef.value?.focus();
+        }
       }
       break;
 
@@ -408,8 +441,8 @@ function handleKeyDown(event: KeyboardEvent): void {
       break;
 
     case 'Escape':
-      if (isSearching.value) {
-        clearSearch();
+      if (isSearchExpanded.value) {
+        closeSearch();
       }
       break;
   }
@@ -435,90 +468,105 @@ onUnmounted(() => {
     <!-- 工具栏 -->
     <div class="file-manager__toolbar">
       <div class="file-manager__toolbar-left">
-        <button
+        <Button
           class="file-manager__btn file-manager__btn--icon"
-          title="file.new_card"
+          :title="t('file_manager.new_card')"
+          html-type="button"
+          type="text"
           @click="handleContextMenuAction('new-card', [])"
         >
           🃏
-        </button>
-        <button
+        </Button>
+        <Button
           class="file-manager__btn file-manager__btn--icon"
-          title="file.new_box"
+          :title="t('file_manager.new_box')"
+          html-type="button"
+          type="text"
           @click="handleContextMenuAction('new-box', [])"
         >
           📦
-        </button>
-        <button
-          class="file-manager__btn file-manager__btn--icon"
-          title="file.new_folder"
-          @click="handleContextMenuAction('new-folder', [])"
-        >
-          📁
-        </button>
-        <div class="file-manager__toolbar-divider"></div>
-        <button
-          class="file-manager__btn file-manager__btn--icon"
-          title="file.refresh"
-          :disabled="isLoading"
-          @click="handleRefresh"
-        >
-          🔄
-        </button>
+        </Button>
       </div>
 
-      <!-- 搜索框 -->
-      <div class="file-manager__search">
-        <span class="file-manager__search-icon">🔍</span>
-        <input
+      <!-- 搜索按钮 -->
+      <Button
+        class="file-manager__btn file-manager__btn--icon"
+        :title="t('file_manager.search_placeholder')"
+        html-type="button"
+        type="text"
+        @click="toggleSearch"
+      >
+        🔍
+      </Button>
+    </div>
+
+    <!-- 搜索框（单独一行） -->
+    <Transition name="search-expand">
+      <div v-if="isSearchExpanded" class="file-manager__search-row">
+        <Input
           ref="searchInputRef"
           v-model="searchQuery"
-          type="text"
           class="file-manager__search-input"
-          placeholder="file.search_placeholder"
-        />
-        <button
-          v-if="searchQuery"
-          class="file-manager__search-clear"
-          @click="clearSearch"
+          :placeholder="t('file_manager.search_placeholder')"
+          clearable
+          @clear="clearSearch"
+        >
+          <template #prefix>🔍</template>
+        </Input>
+        <Button
+          class="file-manager__search-close"
+          html-type="button"
+          type="text"
+          title="关闭搜索"
+          @click="closeSearch"
         >
           ✕
-        </button>
+        </Button>
       </div>
-    </div>
+    </Transition>
 
     <!-- 文件树 -->
     <div class="file-manager__content">
       <div v-if="isLoading" class="file-manager__loading">
         <span class="file-manager__loading-spinner">⏳</span>
-        <span>正在加载...</span>
+        <span>{{ t('file_manager.loading') }}</span>
       </div>
 
       <!-- 空状态：没有文件 -->
       <div v-else-if="displayFiles.length === 0 && !isSearching" class="file-manager__empty">
         <span class="file-manager__empty-icon">📂</span>
-        <span class="file-manager__empty-title">暂无文件</span>
+        <span class="file-manager__empty-title">{{ t('file_manager.empty_title') }}</span>
         <span class="file-manager__empty-hint">
-          请打开一个卡片或箱子文件，<br/>
-          或选择一个工作目录
+          {{ t('file_manager.empty_hint_line1') }}<br/>
+          {{ t('file_manager.empty_hint_line2') }}
         </span>
         <div class="file-manager__empty-actions">
-          <button class="file-manager__empty-btn" @click="handleContextMenuAction('open-file', [])">
-            📄 打开文件
-          </button>
-          <button class="file-manager__empty-btn" @click="handleContextMenuAction('open-folder', [])">
-            📁 选择目录
-          </button>
+          <Button
+            class="file-manager__empty-btn"
+            html-type="button"
+            type="text"
+            @click="handleContextMenuAction('open-file', [])"
+          >
+            📄 {{ t('file_manager.open_file') }}
+          </Button>
+          <Button
+            class="file-manager__empty-btn"
+            html-type="button"
+            type="text"
+            @click="handleContextMenuAction('open-folder', [])"
+          >
+            📁 {{ t('file_manager.open_folder') }}
+          </Button>
         </div>
       </div>
 
       <!-- 搜索无结果 -->
       <div v-else-if="displayFiles.length === 0 && isSearching" class="file-manager__empty">
         <span class="file-manager__empty-icon">🔍</span>
-        <span class="file-manager__empty-title">未找到匹配的文件</span>
-        <button class="file-manager__empty-btn" @click="clearSearch">
-          清空搜索
-        </button>
+        <span class="file-manager__empty-title">{{ t('file_manager.search_empty_title') }}</span>
+        <Button class="file-manager__empty-btn" html-type="button" type="text" @click="clearSearch">
+          {{ t('file_manager.clear_search') }}
+        </Button>
       </div>
 
       <FileTree
@@ -534,22 +582,23 @@ onUnmounted(() => {
         @toggle="handleToggle"
         @rename="handleRename"
         @rename-cancel="handleRenameCancel"
+        @drag-start="handleFileDragStart"
       />
     </div>
 
     <!-- 状态栏 -->
     <div class="file-manager__statusbar">
       <template v-if="isSearching">
-        <span>file.search_results</span>
+        <span>{{ t('file_manager.search_results') }}</span>
         <span class="file-manager__statusbar-count">{{ searchResults.length }}</span>
       </template>
       <template v-else>
         <span v-if="selectedPaths.length > 0">
-          file.selected_count
+          {{ t('file_manager.selected_count') }}
           <span class="file-manager__statusbar-count">{{ selectedPaths.length }}</span>
         </span>
         <span v-else>
-          file.total_items
+          {{ t('file_manager.total_items') }}
           <span class="file-manager__statusbar-count">{{ flattenAllFiles(files).length }}</span>
         </span>
       </template>
@@ -580,16 +629,19 @@ onUnmounted(() => {
 .file-manager__toolbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--chips-spacing-sm, 8px);
-  padding: var(--chips-spacing-sm, 8px);
+  padding: var(--chips-spacing-sm, 8px) var(--chips-spacing-md, 12px);
   background-color: var(--chips-color-bg-primary, #fff);
   border-bottom: 1px solid var(--chips-color-border-light, #f0f0f0);
+  flex-wrap: nowrap;
 }
 
 .file-manager__toolbar-left {
   display: flex;
   align-items: center;
   gap: var(--chips-spacing-xs, 4px);
+  flex-shrink: 0;
 }
 
 .file-manager__toolbar-divider {
@@ -626,9 +678,52 @@ onUnmounted(() => {
   font-size: 16px;
 }
 
-/* 搜索框 */
-.file-manager__search {
+/* 搜索框行（单独一行） */
+.file-manager__search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--chips-spacing-sm, 8px);
+  padding: var(--chips-spacing-sm, 8px) var(--chips-spacing-md, 12px);
+  background-color: var(--chips-color-bg-primary, #fff);
+  border-bottom: 1px solid var(--chips-color-border-light, #f0f0f0);
+}
+
+.file-manager__search-input {
   flex: 1;
+}
+
+.file-manager__search-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: var(--chips-radius-sm, 4px);
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--chips-color-text-secondary, #666);
+  transition: background-color 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.file-manager__search-close:hover {
+  background-color: var(--chips-color-bg-hover, rgba(0, 0, 0, 0.05));
+  color: var(--chips-color-text-primary, #1a1a1a);
+}
+
+.file-manager__search:focus-within {
+  background-color: var(--chips-color-bg-primary, #fff);
+  border-color: var(--chips-color-primary, #1890ff);
+}
+
+.file-manager__search-input {
+  flex: 1;
+}
+
+.file-manager__search-input :deep(.chips-input__wrapper) {
   display: flex;
   align-items: center;
   gap: var(--chips-spacing-xs, 4px);
@@ -639,17 +734,17 @@ onUnmounted(() => {
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-.file-manager__search:focus-within {
+.file-manager__search-input :deep(.chips-input__wrapper:focus-within) {
   background-color: var(--chips-color-bg-primary, #fff);
   border-color: var(--chips-color-primary, #1890ff);
 }
 
-.file-manager__search-icon {
+.file-manager__search-input :deep(.chips-input__prefix) {
   font-size: 12px;
   color: var(--chips-color-text-tertiary, #999);
 }
 
-.file-manager__search-input {
+.file-manager__search-input :deep(.chips-input__inner) {
   flex: 1;
   border: none;
   background: transparent;
@@ -658,11 +753,11 @@ onUnmounted(() => {
   outline: none;
 }
 
-.file-manager__search-input::placeholder {
+.file-manager__search-input :deep(.chips-input__inner::placeholder) {
   color: var(--chips-color-text-tertiary, #999);
 }
 
-.file-manager__search-clear {
+.file-manager__search-input :deep(.chips-input__clear) {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -678,7 +773,7 @@ onUnmounted(() => {
   transition: background-color 0.15s ease;
 }
 
-.file-manager__search-clear:hover {
+.file-manager__search-input :deep(.chips-input__clear:hover) {
   background-color: var(--chips-color-text-secondary, #666);
 }
 
@@ -785,5 +880,19 @@ onUnmounted(() => {
   background-color: var(--chips-color-bg-secondary, #f5f5f5);
   border-color: var(--chips-color-primary, #1890ff);
   color: var(--chips-color-primary, #1890ff);
+}
+
+/* 搜索框展开动画 */
+.search-expand-enter-active,
+.search-expand-leave-active {
+  transition: opacity 0.2s ease, max-height 0.2s ease;
+  max-height: 100px;
+  overflow: hidden;
+}
+
+.search-expand-enter-from,
+.search-expand-leave-to {
+  opacity: 0;
+  max-height: 0;
 }
 </style>

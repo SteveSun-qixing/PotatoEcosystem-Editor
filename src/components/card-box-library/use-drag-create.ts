@@ -28,6 +28,26 @@ export interface UseDragCreateReturn {
 /** 拖放数据的 MIME 类型 */
 const DRAG_DATA_TYPE = 'application/x-chips-drag-data';
 
+/** 预加载的透明拖拽图像（避免显示浏览器默认图标） */
+let transparentDragImage: HTMLImageElement | null = null;
+
+/**
+ * 获取透明拖拽图像（懒加载单例）
+ */
+function getTransparentDragImage(): HTMLImageElement {
+  if (!transparentDragImage) {
+    transparentDragImage = new Image(1, 1);
+    // 1x1 透明 GIF
+    transparentDragImage.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  }
+  return transparentDragImage;
+}
+
+// 预先初始化透明图像（确保在拖拽开始前已加载）
+if (typeof window !== 'undefined') {
+  getTransparentDragImage();
+}
+
 /**
  * 拖放创建 Hook
  *
@@ -66,16 +86,26 @@ export function useDragCreate(): UseDragCreateReturn {
     previewPosition: null,
   });
 
+  /** 全局 drag 事件处理器引用（用于清理） */
+  let globalDragHandler: ((e: DragEvent) => void) | null = null;
+  let globalDragEndHandler: ((e: DragEvent) => void) | null = null;
+
   /**
    * 开始拖放
    * @param data - 拖放数据
    * @param event - 拖放事件
    */
   function startDrag(data: DragData, event: DragEvent): void {
+    // 使用事件的鼠标位置作为初始预览位置，避免从左上角飞来
+    const initialPosition = {
+      x: event.clientX,
+      y: event.clientY,
+    };
+
     dragState.value = {
       isDragging: true,
       data,
-      previewPosition: null,
+      previewPosition: initialPosition,
     };
 
     // 设置拖放数据
@@ -84,11 +114,23 @@ export function useDragCreate(): UseDragCreateReturn {
     // 设置拖放效果
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = 'copy';
-      // 设置拖放图标（使用透明图片，我们自己渲染预览）
-      const img = new Image();
-      img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-      event.dataTransfer.setDragImage(img, 0, 0);
+      // 使用预加载的透明图像隐藏浏览器默认的拖拽图标
+      const transparentImg = getTransparentDragImage();
+      event.dataTransfer.setDragImage(transparentImg, 0, 0);
     }
+
+    // 添加全局 drag 事件监听器来持续更新预览位置
+    globalDragHandler = (e: DragEvent) => {
+      if (dragState.value.isDragging && e.clientX !== 0 && e.clientY !== 0) {
+        dragState.value.previewPosition = { x: e.clientX, y: e.clientY };
+      }
+    };
+    globalDragEndHandler = () => {
+      endDrag();
+    };
+    
+    document.addEventListener('drag', globalDragHandler);
+    document.addEventListener('dragend', globalDragEndHandler);
   }
 
   /**
@@ -106,6 +148,16 @@ export function useDragCreate(): UseDragCreateReturn {
    * 结束拖放
    */
   function endDrag(): void {
+    // 移除全局事件监听器
+    if (globalDragHandler) {
+      document.removeEventListener('drag', globalDragHandler);
+      globalDragHandler = null;
+    }
+    if (globalDragEndHandler) {
+      document.removeEventListener('dragend', globalDragEndHandler);
+      globalDragEndHandler = null;
+    }
+
     dragState.value = {
       isDragging: false,
       data: null,

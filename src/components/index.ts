@@ -22,12 +22,8 @@ export {
   CardBoxLibrary,
   CardTypeGrid,
   LayoutTypeGrid,
-  cardCategories,
-  layoutCategories,
   cardTypes,
   layoutTypes,
-  getCardTypesByCategory,
-  getLayoutTypesByCategory,
   searchCardTypes,
   searchLayoutTypes,
   useDragCreate,
@@ -36,11 +32,8 @@ export {
 } from './card-box-library';
 
 export type {
-  CardCategory,
-  LayoutCategory,
   CardTypeDefinition,
   LayoutTypeDefinition,
-  CategoryDefinition,
   DragData,
   DragState,
   UseDragCreateReturn,

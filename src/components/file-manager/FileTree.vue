@@ -5,7 +5,7 @@
  * @description 树形结构显示文件，支持展开/收起、多选、键盘导航
  */
 
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, watch, onMounted, onUnmounted } from 'vue';
 import FileItem from './FileItem.vue';
 import type { FileInfo } from '@/core/file-service';
 
@@ -13,13 +13,13 @@ interface Props {
   /** 文件列表 */
   files: FileInfo[];
   /** 选中的文件路径列表 */
-  selectedPaths?: string[];
+  selectedPaths: string[];
   /** 正在重命名的文件路径 */
-  renamingPath?: string | null;
+  renamingPath: string | null;
   /** 搜索关键词 */
-  searchQuery?: string;
+  searchQuery: string;
   /** 是否允许多选 */
-  multiSelect?: boolean;
+  multiSelect: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -42,6 +42,8 @@ const emit = defineEmits<{
   rename: [file: FileInfo, newName: string];
   /** 取消重命名 */
   'rename-cancel': [];
+  /** 开始拖放文件 */
+  dragStart: [file: FileInfo, event: DragEvent];
 }>();
 
 /** 树容器引用 */
@@ -180,6 +182,13 @@ function handleRenameCancel(): void {
 }
 
 /**
+ * 处理拖拽开始
+ */
+function handleDragStart(file: FileInfo, event: DragEvent): void {
+  emit('dragStart', file, event);
+}
+
+/**
  * 键盘导航处理
  */
 function handleKeyDown(event: KeyboardEvent): void {
@@ -287,6 +296,7 @@ onUnmounted(() => {
           @toggle="handleToggle"
           @rename="handleRename"
           @rename-cancel="handleRenameCancel"
+          @dragstart="handleDragStart"
         />
       </template>
     </template>

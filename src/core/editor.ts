@@ -4,10 +4,16 @@
  * @description Chips 编辑器的核心类，整合所有模块
  */
 
-import type { MockSDKInstance, MockCard, SDKConnectorOptions } from './connector';
+import type { ChipsSDK, Card as SDKCard } from '@chips/sdk';
+import type { SDKConnectorOptions } from './connector';
 import { SDKConnector, createConnector } from './connector';
 import { EventEmitter, createEventEmitter } from './event-manager';
 import { useEditorStore, useCardStore, useUIStore } from './state';
+import { resourceService } from '@/services/resource-service';
+import {
+  loadBaseCardConfigsFromContent,
+  stringifyBaseCardContentYaml,
+} from './base-card-content-loader';
 import type { EditorConfig, EditorState, LayoutType, WindowConfig } from '@/types';
 
 /** 创建卡片选项 */
@@ -201,13 +207,16 @@ export class ChipsEditor {
    * @param options - 创建选项
    * @returns 创建的卡片
    */
-  async createCard(options: CreateCardOptions): Promise<MockCard> {
+  async createCard(options: CreateCardOptions): Promise<SDKCard> {
     this.ensureReady();
 
     const sdk = this.connector.getSDK();
     const card = await sdk.card.create({
       name: options.name,
       type: options.type,
+      tags: options.tags,
+      theme: options.theme,
+      description: options.description,
     });
 
     // 添加到 store
@@ -230,7 +239,7 @@ export class ChipsEditor {
    * @param options - 打开选项
    * @returns 打开的卡片
    */
-  async openCard(pathOrId: string, options: OpenCardOptions = {}): Promise<MockCard> {
+  async openCard(pathOrId: string, options: OpenCardOptions = {}): Promise<SDKCard> {
     this.ensureReady();
 
     // 检查是否已打开
@@ -252,6 +261,7 @@ export class ChipsEditor {
               resources: [],
             },
           },
+          resources: new Map(),
         };
       }
     }
@@ -261,6 +271,13 @@ export class ChipsEditor {
     try {
       const sdk = this.connector.getSDK();
       const card = await sdk.card.get(pathOrId);
+
+      // 读取每个基础卡片的内容配置文件 content/{id}.yaml
+      // SDK 的 _parseCard 只解析 metadata.yaml 和 structure.yaml，
+      // 不会读取 content 目录下的基础卡片配置文件。
+      // 需要在此处补充读取，将配置注入到 structure 中。
+      const cardPath = pathOrId;
+      await this.loadBaseCardConfigs(card, cardPath);
 
       // 添加到 store
       this.cardStore.addCard(card, pathOrId);
@@ -293,29 +310,71 @@ export class ChipsEditor {
     }
 
     const sdk = this.connector.getSDK();
-    const path = options.path ?? cardInfo.filePath ?? cardId;
+    const path = options.path ?? cardInfo.filePath ?? `TestWorkspace/${cardId}.card`;
+
+    // 收集所有基础卡片引用的资源文件路径
+    const resourcePaths: string[] = [];
+    for (const baseCard of cardInfo.structure) {
+      const config = baseCard.config as Record<string, unknown> | undefined;
+      if (!config) continue;
+
+      // ImageCard: 收集 images[].file_path
+      if (baseCard.type === 'ImageCard' && Array.isArray(config.images)) {
+        for (const img of config.images as Array<Record<string, unknown>>) {
+          if (img.source === 'file' && typeof img.file_path === 'string' && img.file_path) {
+            // 只收集相对路径（非 URL、非 blob）
+            const fp = img.file_path as string;
+            if (!fp.startsWith('http://') && !fp.startsWith('https://') && !fp.startsWith('blob:')) {
+              resourcePaths.push(fp);
+            }
+          }
+        }
+      }
+
+      // VideoCard: 收集 video_file
+      if (baseCard.type === 'VideoCard' && typeof config.video_file === 'string') {
+        const vf = config.video_file as string;
+        if (!vf.startsWith('http://') && !vf.startsWith('https://')) {
+          resourcePaths.push(vf);
+        }
+      }
+    }
 
     // 构建卡片数据
-    const card: MockCard = {
+    const card: SDKCard = {
       id: cardInfo.id,
       metadata: cardInfo.metadata,
       structure: {
         structure: cardInfo.structure,
         manifest: {
           card_count: cardInfo.structure.length,
-          resource_count: 0,
-          resources: [],
+          resource_count: resourcePaths.length,
+          resources: resourcePaths.map(rp => ({
+            path: rp,
+            size: 0,
+            type: rp.match(/\.(jpe?g|png|gif|webp|svg|bmp|ico)$/i) ? 'image' : 'other',
+          })),
         },
       },
+      resources: new Map(),
     };
 
-    await sdk.card.save(path, card);
+    await sdk.card.save(path, card, { overwrite: true });
+
+    // 写入每个基础卡片的内容文件 content/{id}.yaml
+    // 基础卡片的实际内容存储在 BaseCardInfo.config 中，
+    // 需要同步到磁盘上的 content/{id}.yaml 文件
+    const contentDir = `${path}/content`;
+    for (const baseCard of cardInfo.structure) {
+      const contentYaml = stringifyBaseCardContentYaml(baseCard.type, baseCard.config);
+      const contentFilePath = `${contentDir}/${baseCard.id}.yaml`;
+      await resourceService.writeText(contentFilePath, contentYaml);
+    }
 
     // 更新状态
     this.cardStore.markCardSaved(cardId);
-    if (options.path) {
-      this.cardStore.updateFilePath(cardId, options.path);
-    }
+    // 总是更新 filePath，确保导出时可以找到卡片路径
+    this.cardStore.updateFilePath(cardId, path);
 
     // 检查是否还有未保存的卡片
     if (!this.cardStore.hasModifiedCards) {
@@ -324,6 +383,35 @@ export class ChipsEditor {
 
     this.events.emit('card:saved', { cardId });
     this.log(`Card saved: ${cardId}`);
+  }
+
+  /**
+   * 加载基础卡片配置
+   * 
+   * SDK 的 FileAPI._parseCard 只解析 metadata.yaml 和 structure.yaml，
+   * 不会读取 content/{id}.yaml 中的基础卡片配置。
+   * 此方法在打开卡片后，为每个基础卡片读取对应的 content YAML 文件，
+   * 读取唯一标准格式并注入到 structure 的 config 中。
+   * 
+   * content YAML 格式：
+   * ```yaml
+   * type: RichTextCard
+   * data:
+   *   content_source: inline
+   *   content_text: hello
+   * ```
+   * 
+   * @param card - SDK 返回的卡片对象
+   * @param cardPath - 卡片文件路径
+   */
+  private async loadBaseCardConfigs(card: SDKCard, cardPath: string): Promise<void> {
+    const structure = card.structure?.structure;
+    if (!structure || structure.length === 0) {
+      return;
+    }
+    await loadBaseCardConfigsFromContent(structure, cardPath, (contentFilePath) =>
+      resourceService.readText(contentFilePath)
+    );
   }
 
   /**
@@ -525,7 +613,7 @@ export class ChipsEditor {
   /**
    * 获取 SDK 实例
    */
-  get sdk(): MockSDKInstance {
+  get sdk(): ChipsSDK {
     return this.connector.getSDK();
   }
 
