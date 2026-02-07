@@ -4,6 +4,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { resourceServiceMock, resetResourceServiceMock } from '../../helpers/resource-service-mock';
+
+vi.mock('@/services/resource-service', () => ({ resourceService: resourceServiceMock }));
 import {
   FileService,
   getFileService,
@@ -12,6 +15,7 @@ import {
   isValidFileName,
   type FileInfo,
 } from '@/core/file-service';
+import { resetWorkspaceService } from '@/core/workspace-service';
 import { createEventEmitter, type EventEmitter } from '@/core/event-manager';
 
 describe('FileService', () => {
@@ -19,6 +23,8 @@ describe('FileService', () => {
   let events: EventEmitter;
 
   beforeEach(() => {
+    resetResourceServiceMock();
+    resetWorkspaceService();
     resetFileService();
     events = createEventEmitter();
     service = new FileService(events);

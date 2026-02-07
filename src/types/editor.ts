@@ -3,11 +3,7 @@
  * @module types/editor
  */
 
-/** SDK 实例类型（临时占位，等待 @chips/sdk 完善） */
-export interface ChipsSDK {
-  // TODO: 从 @chips/sdk 导入正式类型
-  readonly version: string;
-}
+import type { ChipsSDK } from '@chips/sdk';
 
 /** 编辑器配置 */
 export interface EditorConfig {

@@ -8,6 +8,7 @@
 import { computed } from 'vue';
 import type { DragData } from './types';
 import { cardTypes, layoutTypes } from './data';
+import { t } from '@/services/i18n-service';
 
 interface Props {
   /** 拖放数据 */
@@ -18,12 +19,29 @@ interface Props {
 
 const props = defineProps<Props>();
 
-/** 获取类型信息 */
-const typeInfo = computed(() => {
-  if (props.data.type === 'card') {
-    return cardTypes.find((t) => t.id === props.data.typeId);
+/** 获取预览信息 */
+const previewInfo = computed(() => {
+  const dragData = props.data;
+
+  if (dragData.type === 'workspace-file') {
+    return {
+      icon: dragData.fileType === 'card' ? '🃏' : '📦',
+      name: dragData.name,
+      hintType: dragData.fileType === 'card' ? t('common.card') : t('common.box'),
+    };
   }
-  return layoutTypes.find((t) => t.id === props.data.typeId);
+
+  const typeInfo = dragData.type === 'card'
+    ? cardTypes.find((type) => type.id === dragData.typeId)
+    : layoutTypes.find((type) => type.id === dragData.typeId);
+
+  if (!typeInfo) return null;
+
+  return {
+    icon: typeInfo.icon,
+    name: t(typeInfo.name),
+    hintType: dragData.type === 'card' ? t('common.card') : t('common.box'),
+  };
 });
 
 /** 预览样式 */
@@ -35,16 +53,16 @@ const previewStyle = computed(() => ({
 
 <template>
   <div
-    v-if="typeInfo"
+    v-if="previewInfo"
     class="drag-preview"
     :style="previewStyle"
   >
     <div class="drag-preview__card">
-      <span class="drag-preview__icon">{{ typeInfo.icon }}</span>
-      <span class="drag-preview__name">{{ typeInfo.name }}</span>
+      <span class="drag-preview__icon">{{ previewInfo.icon }}</span>
+      <span class="drag-preview__name">{{ previewInfo.name }}</span>
     </div>
     <div class="drag-preview__hint">
-      释放以创建{{ data.type === 'card' ? '卡片' : '箱子' }}
+      {{ t('drag_preview.hint', { type: previewInfo.hintType }) }}
     </div>
   </div>
 </template>

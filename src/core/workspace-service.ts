@@ -2,16 +2,15 @@
  * 工作区服务
  * @module core/workspace-service
  * @description 管理编辑器的内置工作区目录，所有文件都保存在这里
- * 
- * 设计说明：
- * - 编辑器有自己的工作区文件夹，用于存放用户创建的所有文件
- * - 文件缓存、临时文件、用户制作的卡片和箱子都保存在工作区
- * - 只有用户选择导出时，才会将文件移动到其他位置
  */
 
 import { ref, computed, type Ref, type ComputedRef } from 'vue';
+import yaml from 'yaml';
 import type { EventEmitter } from './event-manager';
 import { createEventEmitter } from './event-manager';
+import { createCardInitializer, type BasicCardConfig } from './card-initializer';
+import { resourceService } from '@/services/resource-service';
+import { generateId62 } from '@/utils';
 
 /** 工作区文件信息 */
 export interface WorkspaceFile {
@@ -56,9 +55,14 @@ export interface WorkspaceService {
   /** 初始化工作区 */
   initialize: () => Promise<void>;
   /** 创建卡片 */
-  createCard: (name: string, initialContent?: unknown, cardId?: string) => Promise<WorkspaceFile>;
+  createCard: (
+    name: string,
+    initialContent?: BasicCardConfig,
+    cardId?: string,
+    parentPath?: string
+  ) => Promise<WorkspaceFile>;
   /** 创建箱子 */
-  createBox: (name: string, layoutType?: string) => Promise<WorkspaceFile>;
+  createBox: (name: string, layoutType?: string, parentPath?: string) => Promise<WorkspaceFile>;
   /** 创建文件夹 */
   createFolder: (name: string, parentPath?: string) => Promise<WorkspaceFile>;
   /** 获取文件 */
@@ -77,18 +81,54 @@ export interface WorkspaceService {
   closeFile: (id: string) => void;
 }
 
-/**
- * 生成唯一 ID
- */
-function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+const ROOT_PREFIX = resourceService.workspaceRoot.split('/').slice(0, -1).join('/');
+
+function toRootRelative(path: string): string {
+  if (path.startsWith(ROOT_PREFIX + '/')) {
+    return path.slice(ROOT_PREFIX.length + 1);
+  }
+  if (path.startsWith('/')) {
+    return path.slice(1);
+  }
+  return path;
 }
 
-/**
- * 获取当前时间的 ISO 字符串
- */
+function toAbsolute(path: string): string {
+  if (path.startsWith(ROOT_PREFIX + '/')) {
+    return path;
+  }
+  if (path.startsWith('/')) {
+    return `${ROOT_PREFIX}${path}`;
+  }
+  return `${ROOT_PREFIX}/${path}`;
+}
+
+function joinPath(...parts: string[]): string {
+  return parts
+    .filter(Boolean)
+    .join('/')
+    .replace(/\\/g, '/')
+    .replace(/\/+/g, '/');
+}
+
+function stripExtension(name: string, ext: string): string {
+  if (name.toLowerCase().endsWith(ext)) {
+    return name.slice(0, -ext.length);
+  }
+  return name;
+}
+
 function now(): string {
   return new Date().toISOString();
+}
+
+async function readMetadata(path: string): Promise<Record<string, any> | null> {
+  try {
+    const content = await resourceService.readText(path);
+    return yaml.parse(content) as Record<string, any>;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -99,10 +139,12 @@ function now(): string {
 export function createWorkspaceService(events?: EventEmitter): WorkspaceService {
   const eventEmitter = events || createEventEmitter();
 
+  const workspaceRootRelative = toRootRelative(resourceService.workspaceRoot);
+
   /** 工作区状态 */
   const state = ref<WorkspaceState>({
     initialized: false,
-    rootPath: '',
+    rootPath: resourceService.workspaceRoot,
     files: [],
     openedFiles: [],
   });
@@ -113,11 +155,17 @@ export function createWorkspaceService(events?: EventEmitter): WorkspaceService 
   /** 是否已初始化 */
   const isInitialized = computed(() => state.value.initialized);
 
+  function resolveParentPath(parentPath?: string): string {
+    if (!parentPath) return workspaceRootRelative;
+    const relative = toRootRelative(parentPath);
+    return relative.startsWith(workspaceRootRelative) ? relative : workspaceRootRelative;
+  }
+
   /**
    * 在文件列表中查找文件
    */
-  function findFileById(files: WorkspaceFile[], id: string): WorkspaceFile | undefined {
-    for (const file of files) {
+  function findFileById(list: WorkspaceFile[], id: string): WorkspaceFile | undefined {
+    for (const file of list) {
       if (file.id === id) return file;
       if (file.children) {
         const found = findFileById(file.children, id);
@@ -128,33 +176,109 @@ export function createWorkspaceService(events?: EventEmitter): WorkspaceService 
   }
 
   /**
-   * 开发阶段工作区路径
-   * 
-   * 开发阶段：指向项目内的测试工作空间
-   * 生产阶段：由用户在软件初始化时选择，可在设置中调整
+   * 根据路径查找文件
    */
-  const DEV_WORKSPACE_PATH = '/ProductFinishedProductTestingSpace/TestWorkspace';
+  function findFileByPath(list: WorkspaceFile[], targetPath: string): WorkspaceFile | undefined {
+    for (const file of list) {
+      if (file.path === targetPath) return file;
+      if (file.children) {
+        const found = findFileByPath(file.children, targetPath);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  }
+
+  async function buildTree(basePath: string): Promise<WorkspaceFile[]> {
+    const entries = await resourceService.list(basePath);
+    const result: WorkspaceFile[] = [];
+    for (const entry of entries) {
+      if (!entry || entry.startsWith('.')) continue;
+      const entryPath = joinPath(basePath, entry);
+      const meta = await resourceService.metadata(entryPath);
+      if (!meta.exists) continue;
+
+      if (meta.isDirectory) {
+        const cardMetaPath = joinPath(entryPath, '.card/metadata.yaml');
+        const boxMetaPath = joinPath(entryPath, '.box/metadata.yaml');
+
+        if (await resourceService.exists(cardMetaPath)) {
+          const metadata = await readMetadata(cardMetaPath);
+          const cardId = metadata?.card_id || entry.replace(/\.card$/i, '');
+          const cardName = metadata?.name || entry;
+          result.push({
+            id: cardId,
+            name: `${stripExtension(cardName, '.card')}.card`,
+            path: entryPath,
+            type: 'card',
+            createdAt: metadata?.created_at || meta.modified || now(),
+            modifiedAt: metadata?.modified_at || meta.modified || now(),
+          });
+          continue;
+        }
+
+        if (await resourceService.exists(boxMetaPath)) {
+          const metadata = await readMetadata(boxMetaPath);
+          const boxId = metadata?.box_id || entry.replace(/\.box$/i, '');
+          const boxName = metadata?.name || entry;
+          result.push({
+            id: boxId,
+            name: `${stripExtension(boxName, '.box')}.box`,
+            path: entryPath,
+            type: 'box',
+            createdAt: metadata?.created_at || meta.modified || now(),
+            modifiedAt: metadata?.modified_at || meta.modified || now(),
+          });
+          continue;
+        }
+
+        const children = await buildTree(entryPath);
+        result.push({
+          id: entryPath,
+          name: entry,
+          path: entryPath,
+          type: 'folder',
+          createdAt: meta.modified || now(),
+          modifiedAt: meta.modified || now(),
+          children,
+        });
+        continue;
+      }
+
+      const lower = entry.toLowerCase();
+      if (lower.endsWith('.card')) {
+        result.push({
+          id: entryPath,
+          name: entry,
+          path: entryPath,
+          type: 'card',
+          createdAt: meta.modified || now(),
+          modifiedAt: meta.modified || now(),
+        });
+      } else if (lower.endsWith('.box')) {
+        result.push({
+          id: entryPath,
+          name: entry,
+          path: entryPath,
+          type: 'box',
+          createdAt: meta.modified || now(),
+          modifiedAt: meta.modified || now(),
+        });
+      }
+    }
+    return result;
+  }
 
   /**
    * 初始化工作区
-   * 
-   * 开发阶段：使用固定的测试工作空间路径
-   * 生产阶段：
-   * 1. 首次启动让用户选择工作区位置
-   * 2. 通过 Electron IPC 获取/设置路径
-   * 3. 可在设置中调整
    */
   async function initialize(): Promise<void> {
     if (state.value.initialized) return;
 
     try {
-      // 开发阶段：使用测试工作空间
-      // 生产阶段 TODO: 
-      // 1. 检查是否有保存的用户选择路径
-      // 2. 如果没有，弹出对话框让用户选择
-      // 3. 通过 Foundation 的 ElectronFramework 获取/保存路径
-      state.value.rootPath = DEV_WORKSPACE_PATH;
-      state.value.files = [];
+      state.value.rootPath = resourceService.workspaceRoot;
+      await resourceService.ensureDir(workspaceRootRelative);
+      await refresh();
       state.value.initialized = true;
 
       eventEmitter.emit('workspace:initialized', { rootPath: state.value.rootPath });
@@ -167,102 +291,128 @@ export function createWorkspaceService(events?: EventEmitter): WorkspaceService 
 
   /**
    * 创建卡片
-   * @param name - 卡片名称
-   * @param initialContent - 初始内容（包含基础卡片信息）
-   * @param cardId - 可选的卡片 ID（用于与 cardStore 同步）
    */
-  async function createCard(name: string, initialContent?: unknown, cardId?: string): Promise<WorkspaceFile> {
-    // 如果提供了 cardId，使用它作为文件 ID（确保数据同步）
-    const id = cardId || generateId();
-    const timestamp = now();
-    const fileName = `${name}.card`;
+  async function createCard(
+    name: string,
+    initialContent?: BasicCardConfig,
+    cardId?: string,
+    parentPath?: string
+  ): Promise<WorkspaceFile> {
+    const id = cardId || generateId62();
+    const parent = resolveParentPath(parentPath);
+    const parentAbsolute = toAbsolute(parent);
+    const initializer = createCardInitializer({ workspaceRoot: parentAbsolute });
 
-    const newCard: WorkspaceFile = {
+    const result = await initializer.createCard(id, name, initialContent);
+    if (!result.success) {
+      throw new Error(result.error || 'Create card failed');
+    }
+
+    await refresh();
+    const targetPath = toRootRelative(result.cardPath);
+    const file = findFileByPath(state.value.files, targetPath);
+    if (file) {
+      eventEmitter.emit('workspace:file-created', { file, content: initialContent });
+      return file;
+    }
+
+    const fallbackFile: WorkspaceFile = {
       id,
-      name: fileName,
-      path: `/${fileName}`,
+      name: `${stripExtension(name.trim(), '.card')}.card`,
+      path: targetPath,
       type: 'card',
-      createdAt: timestamp,
-      modifiedAt: timestamp,
+      createdAt: now(),
+      modifiedAt: now(),
     };
-
-    // 添加到文件列表
-    state.value.files.push(newCard);
-
-    // TODO: 实际实现应该通过内核创建 .card 文件
-    // const cardData = {
-    //   metadata: { name, createdAt: timestamp, modifiedAt: timestamp },
-    //   structure: { basicCards: initialContent ? [initialContent] : [] },
-    // };
-    // await sdk.card.create(newCard.path, cardData);
-
-    eventEmitter.emit('workspace:file-created', { file: newCard, content: initialContent });
-    console.log('[WorkspaceService] 创建卡片:', newCard.name, 'ID:', id, '初始内容:', initialContent);
-
-    return newCard;
+    state.value.files.push(fallbackFile);
+    eventEmitter.emit('workspace:file-created', { file: fallbackFile, content: initialContent });
+    return fallbackFile;
   }
 
   /**
    * 创建箱子
-   * @param name - 箱子名称
-   * @param layoutType - 布局类型
    */
-  async function createBox(name: string, layoutType?: string): Promise<WorkspaceFile> {
-    const id = generateId();
+  async function createBox(name: string, layoutType?: string, parentPath?: string): Promise<WorkspaceFile> {
     const timestamp = now();
-    const fileName = `${name}.box`;
+    const boxId = generateId62();
+    const parent = resolveParentPath(parentPath);
+    const boxFolderName = `${boxId}.box`;
+    const boxPath = joinPath(parent, boxFolderName);
+    const metaDir = joinPath(boxPath, '.box');
 
-    const newBox: WorkspaceFile = {
-      id,
-      name: fileName,
-      path: `/${fileName}`,
+    const metadata = {
+      chip_standards_version: '1.0.0',
+      box_id: boxId,
+      name: name.trim(),
+      created_at: timestamp,
+      modified_at: timestamp,
+      layout: layoutType || 'grid',
+    };
+    const structure = {
+      cards: [],
+    };
+    const content = {
+      layout: layoutType || 'grid',
+    };
+
+    await resourceService.ensureDir(boxPath);
+    await resourceService.ensureDir(metaDir);
+    await resourceService.writeText(joinPath(metaDir, 'metadata.yaml'), yaml.stringify(metadata));
+    await resourceService.writeText(joinPath(metaDir, 'structure.yaml'), yaml.stringify(structure));
+    await resourceService.writeText(joinPath(metaDir, 'content.yaml'), yaml.stringify(content));
+
+    await refresh();
+    const file = findFileByPath(state.value.files, boxPath);
+    if (file) {
+      eventEmitter.emit('workspace:file-created', { file, layoutType });
+      return file;
+    }
+
+    const fallbackFile: WorkspaceFile = {
+      id: boxId,
+      name: `${stripExtension(name.trim(), '.box')}.box`,
+      path: boxPath,
       type: 'box',
       createdAt: timestamp,
       modifiedAt: timestamp,
     };
-
-    // 添加到文件列表
-    state.value.files.push(newBox);
-
-    // TODO: 实际实现应该通过内核创建 .box 文件
-    eventEmitter.emit('workspace:file-created', { file: newBox, layoutType });
-    console.log('[WorkspaceService] 创建箱子:', newBox.name, '布局类型:', layoutType);
-
-    return newBox;
+    state.value.files.push(fallbackFile);
+    eventEmitter.emit('workspace:file-created', { file: fallbackFile, layoutType });
+    return fallbackFile;
   }
 
   /**
    * 创建文件夹
-   * @param name - 文件夹名称
-   * @param parentPath - 父路径
    */
   async function createFolder(name: string, parentPath?: string): Promise<WorkspaceFile> {
-    const id = generateId();
     const timestamp = now();
+    const parent = resolveParentPath(parentPath);
+    const folderPath = joinPath(parent, name.trim());
 
-    const newFolder: WorkspaceFile = {
-      id,
-      name,
-      path: parentPath ? `${parentPath}/${name}` : `/${name}`,
+    await resourceService.ensureDir(folderPath);
+    await refresh();
+    const file = findFileByPath(state.value.files, folderPath);
+    if (file) {
+      eventEmitter.emit('workspace:file-created', { file });
+      return file;
+    }
+
+    const fallbackFile: WorkspaceFile = {
+      id: folderPath,
+      name: name.trim(),
+      path: folderPath,
       type: 'folder',
       createdAt: timestamp,
       modifiedAt: timestamp,
       children: [],
-      expanded: true,
     };
-
-    // 添加到文件列表
-    state.value.files.push(newFolder);
-
-    eventEmitter.emit('workspace:file-created', { file: newFolder });
-    console.log('[WorkspaceService] 创建文件夹:', newFolder.name);
-
-    return newFolder;
+    state.value.files.push(fallbackFile);
+    eventEmitter.emit('workspace:file-created', { file: fallbackFile });
+    return fallbackFile;
   }
 
   /**
    * 获取文件
-   * @param id - 文件 ID
    */
   function getFile(id: string): WorkspaceFile | undefined {
     return findFileById(state.value.files, id);
@@ -270,49 +420,52 @@ export function createWorkspaceService(events?: EventEmitter): WorkspaceService 
 
   /**
    * 删除文件
-   * @param id - 文件 ID
    */
   async function deleteFile(id: string): Promise<void> {
-    const index = state.value.files.findIndex(f => f.id === id);
-    if (index !== -1) {
-      const file = state.value.files[index];
-      state.value.files.splice(index, 1);
+    const file = findFileById(state.value.files, id);
+    if (!file) return;
 
-      // 同时从已打开文件中移除
-      const openIndex = state.value.openedFiles.indexOf(id);
-      if (openIndex !== -1) {
-        state.value.openedFiles.splice(openIndex, 1);
-      }
-
-      eventEmitter.emit('workspace:file-deleted', { file });
-      console.log('[WorkspaceService] 删除文件:', file?.name);
-    }
+    await resourceService.delete(file.path);
+    await refresh();
+    eventEmitter.emit('workspace:file-deleted', { file });
   }
 
   /**
    * 重命名文件
-   * @param id - 文件 ID
-   * @param newName - 新名称
    */
   async function renameFile(id: string, newName: string): Promise<void> {
     const file = findFileById(state.value.files, id);
-    if (file) {
-      const oldName = file.name;
-      file.name = newName;
-      file.modifiedAt = now();
+    if (!file) return;
 
-      eventEmitter.emit('workspace:file-renamed', { file, oldName, newName });
-      console.log('[WorkspaceService] 重命名文件:', oldName, '->', newName);
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+
+    if (file.type === 'card' || file.type === 'box') {
+      const extension = file.type === 'card' ? '.card' : '.box';
+      const cleanName = stripExtension(trimmed, extension);
+      const metadataPath = joinPath(file.path, `.${file.type}`, 'metadata.yaml');
+      const metadata = (await readMetadata(metadataPath)) || {};
+      metadata.name = cleanName;
+      metadata.modified_at = now();
+      await resourceService.writeText(metadataPath, yaml.stringify(metadata));
+      await refresh();
+      eventEmitter.emit('workspace:file-renamed', { file });
+      return;
     }
+
+    const parent = file.path.split('/').slice(0, -1).join('/');
+    const newPath = joinPath(parent, trimmed);
+    await resourceService.move(file.path, newPath);
+    await refresh();
+    eventEmitter.emit('workspace:file-renamed', { file });
   }
 
   /**
    * 刷新文件列表
    */
   async function refresh(): Promise<void> {
-    // TODO: 重新读取工作区目录
-    eventEmitter.emit('workspace:refreshed', {});
-    console.log('[WorkspaceService] 刷新文件列表');
+    state.value.files = await buildTree(workspaceRootRelative);
+    eventEmitter.emit('workspace:refreshed', { files: state.value.files });
   }
 
   /**
@@ -320,26 +473,23 @@ export function createWorkspaceService(events?: EventEmitter): WorkspaceService 
    */
   function getOpenedFiles(): WorkspaceFile[] {
     return state.value.openedFiles
-      .map(id => findFileById(state.value.files, id))
-      .filter((f): f is WorkspaceFile => f !== undefined);
+      .map((id) => findFileById(state.value.files, id))
+      .filter(Boolean) as WorkspaceFile[];
   }
 
   /**
    * 打开文件
-   * @param id - 文件 ID
    */
   function openFile(id: string): void {
     if (!state.value.openedFiles.includes(id)) {
       state.value.openedFiles.push(id);
       const file = findFileById(state.value.files, id);
       eventEmitter.emit('workspace:file-opened', { file });
-      console.log('[WorkspaceService] 打开文件:', file?.name);
     }
   }
 
   /**
    * 关闭文件
-   * @param id - 文件 ID
    */
   function closeFile(id: string): void {
     const index = state.value.openedFiles.indexOf(id);
@@ -347,7 +497,6 @@ export function createWorkspaceService(events?: EventEmitter): WorkspaceService 
       state.value.openedFiles.splice(index, 1);
       const file = findFileById(state.value.files, id);
       eventEmitter.emit('workspace:file-closed', { file });
-      console.log('[WorkspaceService] 关闭文件:', file?.name);
     }
   }
 

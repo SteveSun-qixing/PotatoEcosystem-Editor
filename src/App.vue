@@ -6,15 +6,20 @@
  */
 
 import { ref, onMounted, onUnmounted, provide, computed } from 'vue';
+import { ChipsProvider, ThemeProvider, Button } from '@chips/components';
 import { InfiniteCanvas, Workbench } from '@/layouts';
 import { useEditorStore, useUIStore, useCardStore } from '@/core/state';
 import { useWindowManager } from '@/core/window-manager';
 import { useWorkspaceService } from '@/core/workspace-service';
-import { useCardInitializer } from '@/core/card-initializer';
 import { FileManager } from '@/components/file-manager';
 import { EditPanel } from '@/components/edit-panel';
 import { CardBoxLibrary, type DragData } from '@/components/card-box-library';
 import type { CardWindowConfig, ToolWindowConfig } from '@/types';
+import { generateId62, generateScopedId } from '@/utils';
+import { initializeEditorI18n, t } from '@/services/i18n-service';
+import { resourceService } from '@/services/resource-service';
+import { loadBaseCardConfigsFromContent } from '@/core/base-card-content-loader';
+import yaml from 'yaml';
 
 /** 编辑器状态 Store */
 const editorStore = useEditorStore();
@@ -23,21 +28,24 @@ const cardStore = useCardStore();
 const windowManager = useWindowManager();
 const workspaceService = useWorkspaceService();
 
-/** 卡片初始化器 - 用于写入真实文件 */
-const cardInitializer = useCardInitializer({
-  workspaceRoot: '/ProductFinishedProductTestingSpace/TestWorkspace',
-});
-
 /** 应用状态 */
 const isReady = ref(false);
 const errorMessage = ref<string | null>(null);
 
 /** 当前布局类型 */
 const currentLayout = computed(() => editorStore.currentLayout);
+const locale = computed(() => editorStore.locale);
+const currentTheme = computed(() => uiStore.theme);
 
 /** 窗口尺寸 */
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1400);
 const windowHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 900);
+
+interface CardWindowDropTarget {
+  type: 'card-window';
+  cardId: string;
+  insertIndex?: number;
+}
 
 /**
  * 初始化工具窗口到 uiStore
@@ -48,10 +56,10 @@ function initializeToolWindows(): void {
 
   // 文件管理器
   const fileManagerConfig: ToolWindowConfig = {
-    id: 'file-manager',
+    id: generateScopedId('tool'),
     type: 'tool',
     component: 'FileManager',
-    title: '文件管理器',
+    title: t('app.tool_file_manager'),
     icon: '📁',
     position: { x: 20, y: 20 },
     size: { width: 280, height: 500 },
@@ -65,10 +73,10 @@ function initializeToolWindows(): void {
 
   // 编辑面板
   const editPanelConfig: ToolWindowConfig = {
-    id: 'edit-panel',
+    id: generateScopedId('tool'),
     type: 'tool',
     component: 'EditPanel',
-    title: '编辑面板',
+    title: t('app.tool_edit_panel'),
     icon: '✏️',
     position: { x: w - 340, y: 20 },
     size: { width: 320, height: 500 },
@@ -82,10 +90,10 @@ function initializeToolWindows(): void {
 
   // 卡箱库
   const cardBoxLibraryConfig: ToolWindowConfig = {
-    id: 'card-box-library',
+    id: generateScopedId('tool'),
     type: 'tool',
     component: 'CardBoxLibrary',
-    title: '卡箱库',
+    title: t('app.tool_card_box_library'),
     icon: '📦',
     position: { x: 20, y: h - 350 },
     size: { width: 400, height: 300 },
@@ -113,42 +121,238 @@ function updateWindowSize(): void {
 }
 
 /**
- * 生成唯一 ID（10 位 62 进制，用于内部窗口等）
- */
-function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
-
-/**
- * 生成 10 位 62 进制卡片 ID（符合生态标准）
- */
-function generateCardId62(): string {
-  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-  let id = '';
-  for (let i = 0; i < 10; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return id;
-}
-
-/**
  * 处理拖放创建卡片/箱子
  * @param data - 拖放数据
  * @param worldPosition - 世界坐标位置
  */
+type CardLibraryDragData = Extract<DragData, { type: 'card' }>;
+type LayoutLibraryDragData = Extract<DragData, { type: 'layout' }>;
+type WorkspaceFileDragData = Extract<DragData, { type: 'workspace-file' }>;
+
+function normalizeInsertIndex(index: number | undefined, length: number): number {
+  if (index === undefined || !Number.isFinite(index)) {
+    return length;
+  }
+  return Math.max(0, Math.min(length, index));
+}
+
+function getCardWindow(cardId: string): CardWindowConfig | undefined {
+  return uiStore.cardWindows.find((window) => window.cardId === cardId);
+}
+
+function focusCardWindow(cardId: string): void {
+  const targetWindow = getCardWindow(cardId);
+  if (targetWindow) {
+    windowManager.focusWindow(targetWindow.id);
+  }
+}
+
+function insertLibraryBaseCard(
+  data: CardLibraryDragData,
+  target: CardWindowDropTarget
+): boolean {
+  const targetCard = cardStore.openCards.get(target.cardId);
+  if (!targetCard) return false;
+
+  const baseCardId = generateId62();
+  const insertIndex = normalizeInsertIndex(target.insertIndex, targetCard.structure.length);
+  cardStore.addBaseCard(
+    target.cardId,
+    {
+      id: baseCardId,
+      type: data.typeId,
+      config: {
+        content_source: 'inline',
+        content_text: '',
+      },
+    },
+    insertIndex
+  );
+  cardStore.setActiveCard(target.cardId);
+  cardStore.setSelectedBaseCard(baseCardId);
+  focusCardWindow(target.cardId);
+  return true;
+}
+
+function insertNestedCardFile(
+  data: WorkspaceFileDragData,
+  target: CardWindowDropTarget
+): boolean {
+  if (data.fileType !== 'card') return false;
+
+  const targetCard = cardStore.openCards.get(target.cardId);
+  if (!targetCard) return false;
+
+  const baseCardId = generateId62();
+  const insertIndex = normalizeInsertIndex(target.insertIndex, targetCard.structure.length);
+  cardStore.addBaseCard(
+    target.cardId,
+    {
+      id: baseCardId,
+      type: 'NestedCard',
+      config: {
+        card_id: data.fileId,
+        card_path: data.filePath,
+        card_name: data.name,
+      },
+    },
+    insertIndex
+  );
+  cardStore.setActiveCard(target.cardId);
+  cardStore.setSelectedBaseCard(baseCardId);
+  focusCardWindow(target.cardId);
+  return true;
+}
+
+async function ensureWorkspaceCardLoaded(data: WorkspaceFileDragData): Promise<string | null> {
+  if (data.fileType !== 'card') return null;
+
+  const existingById = cardStore.openCards.get(data.fileId);
+  if (existingById) return existingById.id;
+
+  const existingByPath = Array.from(cardStore.openCards.values()).find(
+    (card) => card.filePath === data.filePath
+  );
+  if (existingByPath) return existingByPath.id;
+
+  const metadataPath = `${data.filePath}/.card/metadata.yaml`;
+  const structurePath = `${data.filePath}/.card/structure.yaml`;
+
+  const now = new Date().toISOString();
+  let metadataDoc: Record<string, unknown> = {};
+  let structureDoc: Record<string, unknown> = {};
+
+  try {
+    metadataDoc = (yaml.parse(await resourceService.readText(metadataPath)) as Record<string, unknown>) || {};
+  } catch {
+    metadataDoc = {};
+  }
+
+  try {
+    structureDoc = (yaml.parse(await resourceService.readText(structurePath)) as Record<string, unknown>) || {};
+  } catch {
+    structureDoc = {};
+  }
+
+  const rawStructure = Array.isArray(structureDoc.structure) ? structureDoc.structure : [];
+  const structure = rawStructure
+    .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+    .map((item) => ({
+      id: typeof item.id === 'string' ? item.id : generateId62(),
+      type: typeof item.type === 'string' ? item.type : 'UnknownCard',
+      config: {} as Record<string, unknown>,
+    }));
+
+  await loadBaseCardConfigsFromContent(structure, data.filePath, (contentPath) =>
+    resourceService.readText(contentPath)
+  );
+
+  const metadataName = typeof metadataDoc.name === 'string'
+    ? metadataDoc.name
+    : data.name.replace(/\.card$/i, '');
+  const metadataCardId = typeof metadataDoc.card_id === 'string' ? metadataDoc.card_id : data.fileId;
+  const metadataCreatedAt = typeof metadataDoc.created_at === 'string' ? metadataDoc.created_at : now;
+  const metadataModifiedAt = typeof metadataDoc.modified_at === 'string' ? metadataDoc.modified_at : now;
+
+  cardStore.addCard({
+    id: metadataCardId,
+    metadata: {
+      chip_standards_version: '1.0.0',
+      card_id: metadataCardId,
+      name: metadataName,
+      created_at: metadataCreatedAt,
+      modified_at: metadataModifiedAt,
+    },
+    structure: {
+      structure,
+      manifest: {
+        card_count: structure.length,
+        resource_count: 0,
+        resources: [],
+      },
+    },
+  });
+
+  cardStore.updateFilePath(metadataCardId, data.filePath);
+  return metadataCardId;
+}
+
+async function openWorkspaceCardWindow(
+  data: WorkspaceFileDragData,
+  position: { x: number; y: number }
+): Promise<void> {
+  if (data.fileType !== 'card') return;
+
+  const loadedCardId = await ensureWorkspaceCardLoaded(data);
+  if (!loadedCardId) return;
+
+  const targetCard = cardStore.openCards.get(loadedCardId);
+  const cardName = targetCard?.metadata.name || data.name.replace(/\.card$/i, '');
+
+  const existingWindow = getCardWindow(loadedCardId);
+  if (existingWindow) {
+    windowManager.updateWindow(existingWindow.id, {
+      position,
+      state: 'normal',
+    });
+    windowManager.focusWindow(existingWindow.id);
+    cardStore.setActiveCard(loadedCardId);
+    return;
+  }
+
+  const windowConfig: CardWindowConfig = {
+    id: generateScopedId('window'),
+    type: 'card',
+    cardId: loadedCardId,
+    title: cardName,
+    position: { x: position.x, y: position.y },
+    size: { width: 360, height: 500 },
+    state: 'normal',
+    zIndex: 100,
+    resizable: true,
+    draggable: true,
+    closable: true,
+    minimizable: true,
+    isEditing: true,
+  };
+
+  uiStore.addWindow(windowConfig);
+  uiStore.focusWindow(windowConfig.id);
+  cardStore.setActiveCard(loadedCardId);
+}
+
+async function handleWorkspaceFileDrop(
+  data: WorkspaceFileDragData,
+  worldPosition: { x: number; y: number },
+  target?: CardWindowDropTarget
+): Promise<void> {
+  if (target && insertNestedCardFile(data, target)) {
+    return;
+  }
+  await openWorkspaceCardWindow(data, worldPosition);
+}
+
 async function handleDropCreate(
   data: DragData,
-  worldPosition: { x: number; y: number }
+  worldPosition: { x: number; y: number },
+  target?: CardWindowDropTarget
 ): Promise<void> {
-  console.log('[App] 拖放创建:', data, '位置:', worldPosition);
+  console.log('[App] 拖放创建:', data, '位置:', worldPosition, '目标:', target);
 
   if (data.type === 'card') {
-    // 创建复合卡片
+    if (target && insertLibraryBaseCard(data, target)) {
+      return;
+    }
     await createCompositeCard(data, worldPosition);
-  } else if (data.type === 'layout') {
-    // 创建箱子
-    await createBox(data, worldPosition);
+    return;
   }
+
+  if (data.type === 'layout') {
+    await createBox(data, worldPosition);
+    return;
+  }
+
+  await handleWorkspaceFileDrop(data, worldPosition, target);
 }
 
 /**
@@ -157,29 +361,32 @@ async function handleDropCreate(
  * @param position - 桌面位置
  */
 async function createCompositeCard(
-  data: DragData,
+  data: CardLibraryDragData,
   position: { x: number; y: number }
 ): Promise<void> {
   cardCounter++;
-  const cardName = `未命名卡片 ${cardCounter}`;
+  const cardName = t('app.card_default_name', { index: cardCounter });
   // 使用符合生态标准的 10 位 62 进制 ID
-  const cardId = generateCardId62();
-  const windowId = `window-${cardId}`;
+  const cardId = generateId62();
+  const windowId = generateScopedId('window');
   const timestamp = new Date().toISOString();
 
   // 创建基础卡片数据（也使用 62 进制 ID）
-  const baseCardId = generateCardId62();
+  const baseCardId = generateId62();
   const baseCard = {
     id: baseCardId,
-    type: data.typeId, // 基础卡片类型 ID（如 'rich-text'）
-    config: {},
+    type: data.typeId, // 基础卡片类型 ID（如 'RichTextCard'）
+    config: {
+      content_source: 'inline',
+      content_text: '',
+    },
   };
 
   // 创建卡片数据并添加到 cardStore
   cardStore.addCard({
     id: cardId,
     metadata: {
-      chip_standards_version: '1.0',
+      chip_standards_version: '1.0.0',
       card_id: cardId,
       name: cardName,
       created_at: timestamp,
@@ -204,7 +411,6 @@ async function createCompositeCard(
     type: 'card',
     cardId: cardId,
     title: cardName,
-    icon: '🃏',
     position: { x: position.x, y: position.y },
     size: { width: 360, height: 500 },
     state: 'normal',
@@ -221,28 +427,35 @@ async function createCompositeCard(
   uiStore.focusWindow(windowId);
 
   // 创建工作区文件记录（使用相同的 cardId 确保数据同步）
-  await workspaceService.createCard(cardName, { type: data.typeId }, cardId);
-
-  // 写入真实文件到工作目录
-  console.log('[App] 准备写入卡片文件, cardId:', cardId, 'cardName:', cardName, 'baseCardId:', baseCardId);
-  try {
-    // createCard(cardId, name, initialBasicCard)
-    console.log('[App] 调用 cardInitializer.createCard...');
-    const result = await cardInitializer.createCard(cardId, cardName, {
-      type: data.typeId,
-      id: baseCardId,
-    });
-    console.log('[App] createCard 返回结果:', JSON.stringify(result, null, 2));
-    if (result.success) {
-      console.log('[App] ✅ 卡片文件已写入:', result.cardPath, '文件:', result.createdFiles);
-    } else {
-      console.warn('[App] ❌ 卡片创建失败:', result.error, '错误码:', result.errorCode);
-    }
-  } catch (error) {
-    console.error('[App] ❌ 写入卡片文件异常:', error);
-  }
+  const workspaceFile = await workspaceService.createCard(
+    cardName,
+    { type: data.typeId, id: baseCardId },
+    cardId
+  );
+  cardStore.updateFilePath(cardId, workspaceFile.path);
 
   console.log('[App] 已创建复合卡片:', cardName, 'ID:', cardId, '包含基础卡片:', data.name);
+}
+
+/**
+ * 处理编辑面板配置变更
+ */
+function handleEditPanelConfigChange(baseCardId: string, config: Record<string, unknown>): void {
+  const activeCard = cardStore.activeCard;
+  if (!activeCard) return;
+
+  const updatedStructure = activeCard.structure.map((baseCard) => {
+    if (baseCard.id !== baseCardId) return baseCard;
+    return {
+      ...baseCard,
+      config: {
+        ...baseCard.config,
+        ...config,
+      },
+    };
+  });
+
+  cardStore.updateCardStructure(activeCard.id, updatedStructure);
 }
 
 /**
@@ -251,14 +464,15 @@ async function createCompositeCard(
  * @param position - 桌面位置
  */
 async function createBox(
-  data: DragData,
+  data: LayoutLibraryDragData,
   position: { x: number; y: number }
 ): Promise<void> {
   // TODO: 实现箱子创建逻辑
   console.log('[App] 创建箱子:', data.name, '布局类型:', data.typeId, '位置:', position);
   
   // 暂时创建一个工作区文件记录
-  await workspaceService.createBox(`新箱子 ${cardCounter++}`, data.typeId);
+  const boxIndex = cardCounter++;
+  await workspaceService.createBox(t('app.box_default_name', { index: boxIndex }), data.typeId);
 }
 
 onMounted(() => {
@@ -281,24 +495,13 @@ function handleRetry(): void {
  */
 onMounted(async () => {
   try {
+    await initializeEditorI18n(locale.value);
+
     // 初始化工作区服务
     await workspaceService.initialize();
 
     // 初始化工具窗口到 uiStore
     initializeToolWindows();
-
-    // 检测文件服务器连接状态
-    try {
-      const response = await fetch('http://localhost:3456/status', { 
-        method: 'GET',
-        signal: AbortSignal.timeout(2000) 
-      });
-      if (response.ok) {
-        console.log('[Chips Editor] ✅ 文件服务器已连接，卡片将保存到工作目录');
-      }
-    } catch {
-      console.log('[Chips Editor] 📝 运行于内存模式（文件服务器未启动）');
-    }
 
     // 模拟初始化延迟
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -309,7 +512,7 @@ onMounted(async () => {
     isReady.value = true;
     console.log('[Chips Editor] 初始化完成');
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Unknown error';
+    errorMessage.value = error instanceof Error ? error.message : t('app.error_unknown');
     console.error('[Chips Editor] Initialization failed:', error);
   }
 });
@@ -324,14 +527,16 @@ provide('editorContext', {
 </script>
 
 <template>
-  <div id="chips-editor">
+  <ThemeProvider :theme="currentTheme">
+    <ChipsProvider :locale="locale" :theme="currentTheme">
+      <div id="chips-editor">
     <!-- 加载状态 -->
     <div
       v-if="!isReady && !errorMessage"
       class="loading-container"
     >
       <div class="loading-spinner"></div>
-      <p class="loading-text">Loading Chips Editor...</p>
+      <p class="loading-text">{{ t('app.loading') }}</p>
     </div>
 
     <!-- 错误状态 -->
@@ -339,14 +544,15 @@ provide('editorContext', {
       v-else-if="errorMessage"
       class="error-container"
     >
-      <p class="error-title">Failed to load editor</p>
+      <p class="error-title">{{ t('app.error_title') }}</p>
       <p class="error-message">{{ errorMessage }}</p>
-      <button
+      <Button
         class="retry-button"
+        type="primary"
         @click="handleRetry"
       >
-        Retry
-      </button>
+        {{ t('app.error_retry') }}
+      </Button>
     </div>
 
     <!-- 编辑器主体 -->
@@ -366,7 +572,7 @@ provide('editorContext', {
         </template>
 
         <template #tool-EditPanel>
-          <EditPanel />
+          <EditPanel @config-changed="handleEditPanelConfigChange" />
         </template>
 
         <template #tool-CardBoxLibrary>
@@ -382,10 +588,12 @@ provide('editorContext', {
         v-else
         class="unknown-layout"
       >
-        <p>Unknown layout: {{ currentLayout }}</p>
+        <p>{{ t('app.layout_unknown', { layout: currentLayout }) }}</p>
       </div>
     </template>
-  </div>
+      </div>
+    </ChipsProvider>
+  </ThemeProvider>
 </template>
 
 <style scoped>
@@ -454,7 +662,7 @@ provide('editorContext', {
   margin-top: var(--chips-spacing-md, 16px);
   padding: var(--chips-spacing-sm, 8px) var(--chips-spacing-lg, 24px);
   background-color: var(--chips-color-primary, #3b82f6);
-  color: var(--chips-color-text-on-primary, #ffffff);
+  color: #ffffff;
   border: none;
   border-radius: var(--chips-radius-md, 6px);
   font-weight: var(--chips-font-weight-medium, 500);
@@ -463,7 +671,7 @@ provide('editorContext', {
 }
 
 .retry-button:hover {
-  background-color: var(--chips-color-primary-hover, #2563eb);
+  background-color: var(--chips-color-primary-dark, #2563eb);
 }
 
 /* 未知布局回退 */

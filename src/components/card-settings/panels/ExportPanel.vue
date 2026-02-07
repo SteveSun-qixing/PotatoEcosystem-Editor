@@ -2,266 +2,377 @@
 /**
  * ExportPanel 导出面板组件
  * @module components/card-settings/panels/ExportPanel
- * 
- * 只负责导出UI交互，所有业务逻辑通过 useCardExport composable 处理
+ *
+ * 负责卡片导出为各种格式（.card / HTML / PDF / 图片）
+ * 使用薯片组件库，遵循主题系统规范
  */
 
-import { ref, watch } from 'vue';
-import { useCardExport, type ExportFormat, type ExportOptions } from '@/composables/useCardExport';
-import type { ChipsSDK } from '@chips/sdk';
+import { ref, computed, watch } from 'vue';
+import { Button, Progress } from '@chips/components';
+import type { CardInfo } from '@/core/state';
+import { getEditorSdk } from '@/services/sdk-service';
+import { resourceService } from '@/services/resource-service';
+import { t } from '@/services/i18n-service';
+import { stringifyBaseCardContentYaml } from '@/core/base-card-content-loader';
 
 interface Props {
   /** 卡片 ID */
   cardId: string;
-  /** SDK 实例 */
-  sdk: ChipsSDK;
-  /** 默认导出路径 */
-  defaultOutputPath?: string;
+  /** 卡片信息 */
+  cardInfo: CardInfo | undefined;
 }
 
 const props = defineProps<Props>();
 
-// 使用 useCardExport composable
-const { status, progress, message, executeExport, cancelExport, reset } = useCardExport(
-  props.sdk
-);
+// 导出状态
+const exportProgress = ref(0);
+const exportStatus = ref<'idle' | 'exporting' | 'success' | 'error'>('idle');
+const exportMessage = ref('');
 
-// 导出选项
-const outputPath = ref(props.defaultOutputPath || '');
-const selectedFormat = ref<ExportFormat>('html');
+const ROOT_PREFIX = resourceService.workspaceRoot.split('/').slice(0, -1).join('/');
 
-// 格式特定选项
-const includeAssets = ref(true);
-const compress = ref(false);
-const imageFormat = ref<'png' | 'jpg'>('png');
-const imageQuality = ref(90);
-const scale = ref(1);
-const pageFormat = ref<'a4' | 'a5' | 'letter'>('a4');
-const orientation = ref<'portrait' | 'landscape'>('portrait');
-
-// 监听默认路径变化
-watch(
-  () => props.defaultOutputPath,
-  (newPath) => {
-    if (newPath) {
-      outputPath.value = newPath;
-    }
+function toRootRelative(path: string): string {
+  if (path.startsWith(ROOT_PREFIX + '/')) {
+    return path.slice(ROOT_PREFIX.length + 1);
   }
-);
+  if (path.startsWith('/')) {
+    return path.slice(1);
+  }
+  return path;
+}
+
+const workspaceRootRelative = toRootRelative(resourceService.workspaceRoot);
+const externalRootRelative = toRootRelative(resourceService.externalRoot);
 
 /**
- * 执行导出
+ * 清理文件名中的非法字符
  */
-async function handleExport(format: ExportFormat): Promise<void> {
-  if (!outputPath.value) {
-    message.value = '请指定输出路径';
+function sanitizeFileName(name: string): string {
+  return name
+    .replace(/[\/:*?"<>|]/g, '_')
+    .replace(/[ -]/g, '')
+    .trim();
+}
+
+/**
+ * 生成唯一文件名
+ */
+async function generateUniqueFileName(
+  baseName: string,
+  extension: string
+): Promise<{ fileName: string; fullPath: string }> {
+  const cleanBaseName = sanitizeFileName(baseName) || t('card_settings.untitled');
+  const separator = '_';
+  const maxAttempts = 1000;
+
+  const originalFileName = `${cleanBaseName}${extension}`;
+  const originalPath = `${externalRootRelative}/${originalFileName}`;
+
+  const exists = await resourceService.exists(originalPath);
+  if (!exists) {
+    return { fileName: originalFileName, fullPath: originalPath };
+  }
+
+  for (let i = 1; i <= maxAttempts; i += 1) {
+    const numberedFileName = `${cleanBaseName}${separator}${i}${extension}`;
+    const numberedPath = `${externalRootRelative}/${numberedFileName}`;
+    const numberedExists = await resourceService.exists(numberedPath);
+    if (!numberedExists) {
+      return { fileName: numberedFileName, fullPath: numberedPath };
+    }
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const fallbackFileName = `${cleanBaseName}${separator}${timestamp}${extension}`;
+  return { fileName: fallbackFileName, fullPath: `${externalRootRelative}/${fallbackFileName}` };
+}
+
+/**
+ * 生成唯一目录名
+ */
+async function generateUniqueDirectoryName(
+  baseName: string
+): Promise<{ directoryName: string; fullPath: string }> {
+  const cleanBaseName = sanitizeFileName(baseName) || t('card_settings.untitled');
+  const separator = '_';
+  const maxAttempts = 1000;
+
+  const originalPath = `${externalRootRelative}/${cleanBaseName}`;
+  const exists = await resourceService.exists(originalPath);
+  if (!exists) {
+    return { directoryName: cleanBaseName, fullPath: originalPath };
+  }
+
+  for (let i = 1; i <= maxAttempts; i += 1) {
+    const numberedName = `${cleanBaseName}${separator}${i}`;
+    const numberedPath = `${externalRootRelative}/${numberedName}`;
+    const numberedExists = await resourceService.exists(numberedPath);
+    if (!numberedExists) {
+      return { directoryName: numberedName, fullPath: numberedPath };
+    }
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const fallbackName = `${cleanBaseName}${separator}${timestamp}`;
+  return { directoryName: fallbackName, fullPath: `${externalRootRelative}/${fallbackName}` };
+}
+
+function resolveCardPath(cardId: string, path?: string): string {
+  if (path && path.trim()) {
+    return toRootRelative(path);
+  }
+  return `${workspaceRootRelative}/${cardId}.card`;
+}
+
+/**
+ * 保存卡片到工作区
+ */
+async function saveCardToWorkspace(cardId: string, cardPath: string, card: CardInfo): Promise<void> {
+  const sdk = await getEditorSdk();
+  const timestamp = new Date().toISOString();
+  const cardData = {
+    id: cardId,
+    metadata: {
+      ...card.metadata,
+      card_id: cardId,
+      modified_at: timestamp,
+    },
+    structure: {
+      structure: card.structure.map((baseCard) => ({ id: baseCard.id, type: baseCard.type })),
+      manifest: {
+        card_count: card.structure.length,
+        resource_count: 0,
+        resources: [],
+      },
+    },
+    resources: new Map(),
+  };
+
+  // 1. 保存卡片元数据和结构
+  await sdk.card.save(cardPath, cardData, { overwrite: true });
+
+  // 2. 写入每个基础卡片的内容文件 content/{id}.yaml
+  //    这些内容存储在 store 的 BaseCardInfo.config 中，
+  //    对应磁盘上的 content/{id}.yaml 文件。
+  //    转换插件（CardtoHTMLPlugin）解析卡片时会读取这些文件来获取基础卡片数据。
+  const contentDir = `${cardPath}/content`;
+  let savedContentCount = 0;
+  for (const baseCard of card.structure) {
+    const contentYaml = stringifyBaseCardContentYaml(baseCard.type, baseCard.config);
+    const contentFilePath = `${contentDir}/${baseCard.id}.yaml`;
+    await resourceService.writeText(contentFilePath, contentYaml);
+    savedContentCount += 1;
+  }
+
+  console.log(`[SaveCard] 卡片已保存到工作区: ${cardPath}，写入 ${savedContentCount} 个基础卡片内容文件`);
+}
+
+// 导出格式配置
+const exportFormats = computed(() => [
+  {
+    key: 'card' as const,
+    icon: '📦',
+    label: t('card_settings.export_card'),
+    desc: '.card',
+  },
+  {
+    key: 'html' as const,
+    icon: '🌐',
+    label: t('card_settings.export_html'),
+    desc: 'HTML',
+  },
+  {
+    key: 'pdf' as const,
+    icon: '📄',
+    label: t('card_settings.export_pdf'),
+    desc: 'PDF',
+  },
+  {
+    key: 'image' as const,
+    icon: '🖼️',
+    label: t('card_settings.export_image'),
+    desc: 'PNG',
+  },
+]);
+
+/**
+ * 执行导出操作
+ */
+async function handleExport(format: 'card' | 'html' | 'pdf' | 'image'): Promise<void> {
+  if (exportStatus.value === 'exporting') return;
+  if (!props.cardInfo) {
+    exportStatus.value = 'error';
+    exportMessage.value = t('card_settings.export_no_card');
     return;
   }
 
-  selectedFormat.value = format;
+  exportStatus.value = 'exporting';
+  exportProgress.value = 0;
+  exportMessage.value = t('card_settings.export_start', { format: format.toUpperCase() });
 
-  // 构建导出选项
-  const options: ExportOptions = {
-    outputPath: outputPath.value,
-  };
+  try {
+    exportProgress.value = 10;
 
-  // 根据格式添加特定选项
-  switch (format) {
-    case 'card':
-      options.includeResources = true;
-      options.compress = compress.value;
-      break;
+    const cardName = props.cardInfo.metadata.name || t('card_settings.untitled_card');
+    const cardId = props.cardId;
+    const cardPath = resolveCardPath(cardId, props.cardInfo.filePath);
 
-    case 'html':
-      options.includeAssets = includeAssets.value;
-      break;
+    // 所有格式导出前，先将卡片（含基础卡片内容）保存到工作区
+    // 确保磁盘上的文件与编辑器内存状态一致
+    exportMessage.value = t('card_settings.export_save_card');
+    exportProgress.value = 15;
+    await saveCardToWorkspace(cardId, cardPath, props.cardInfo);
 
-    case 'pdf':
-      options.pageFormat = pageFormat.value;
-      options.orientation = orientation.value;
-      break;
+    if (format === 'card') {
+      exportMessage.value = t('card_settings.export_create_package');
+      exportProgress.value = 35;
 
-    case 'image':
-      options.format = imageFormat.value;
-      options.quality = imageQuality.value;
-      options.scale = scale.value;
-      break;
+      const { fileName, fullPath } = await generateUniqueFileName(cardName, '.card');
+      const result = await resourceService.exportCard(cardId, fullPath);
+      if (!result.success) {
+        throw new Error(result.error?.message || t('card_settings.export_package_failed'));
+      }
+
+      exportProgress.value = 100;
+      exportStatus.value = 'success';
+      exportMessage.value = t('card_settings.export_done', {
+        path: `${externalRootRelative}/${fileName}`,
+      });
+    } else if (format === 'html') {
+      exportMessage.value = t('card_settings.export_convert');
+      exportProgress.value = 35;
+
+      const { directoryName, fullPath } = await generateUniqueDirectoryName(cardName);
+      const result = await resourceService.convertToHTML(cardPath, fullPath, {
+        includeAssets: true,
+        themeId: props.cardInfo.metadata.theme,
+      });
+
+      if (!result.success) {
+        throw new Error(result.error?.message || t('card_settings.export_html_failed'));
+      }
+
+      exportProgress.value = 100;
+      exportStatus.value = 'success';
+      exportMessage.value = t('card_settings.export_done', {
+        path: `${externalRootRelative}/${directoryName}/`,
+      });
+    } else if (format === 'pdf') {
+      exportMessage.value = t('card_settings.export_convert');
+      exportProgress.value = 35;
+
+      const { fileName, fullPath } = await generateUniqueFileName(cardName, '.pdf');
+      const result = await resourceService.convertToPDF(cardPath, fullPath, {
+        themeId: props.cardInfo.metadata.theme,
+      });
+
+      if (!result.success) {
+        throw new Error(result.error?.message || t('card_settings.export_pdf_failed'));
+      }
+
+      exportProgress.value = 100;
+      exportStatus.value = 'success';
+      exportMessage.value = t('card_settings.export_done', {
+        path: `${externalRootRelative}/${fileName}`,
+      });
+    } else if (format === 'image') {
+      exportMessage.value = t('card_settings.export_convert');
+      exportProgress.value = 35;
+
+      const { fileName, fullPath } = await generateUniqueFileName(cardName, '.png');
+      const result = await resourceService.convertToImage(cardPath, fullPath, {
+        format: 'png',
+        themeId: props.cardInfo.metadata.theme,
+      });
+
+      if (!result.success) {
+        throw new Error(result.error?.message || t('card_settings.export_image_failed'));
+      }
+
+      exportProgress.value = 100;
+      exportStatus.value = 'success';
+      exportMessage.value = t('card_settings.export_done', {
+        path: `${externalRootRelative}/${fileName}`,
+      });
+    }
+
+    if (exportStatus.value === 'success') {
+      setTimeout(() => {
+        if (exportStatus.value === 'success') {
+          exportStatus.value = 'idle';
+          exportProgress.value = 0;
+          exportMessage.value = '';
+        }
+      }, 5000);
+    }
+  } catch (error) {
+    exportStatus.value = 'error';
+    exportMessage.value = t('card_settings.export_failed', {
+      error: error instanceof Error ? error.message : t('card_settings.export_unknown_error'),
+    });
   }
-
-  // 执行导出
-  await executeExport(props.cardId, format, options);
 }
 
-/**
- * 取消导出
- */
-async function handleCancel(): Promise<void> {
-  const cancelled = await cancelExport();
-  if (!cancelled) {
-    console.warn('Failed to cancel export');
+// 进度条状态
+const progressStatus = computed(() => {
+  if (exportStatus.value === 'success') return 'success';
+  if (exportStatus.value === 'error') return 'exception';
+  return 'normal';
+});
+
+// 当面板可见时重置导出状态
+watch(
+  () => props.cardId,
+  () => {
+    exportProgress.value = 0;
+    exportStatus.value = 'idle';
+    exportMessage.value = '';
   }
-}
+);
 </script>
 
 <template>
   <div class="export-panel">
-    <!-- 输出路径设置 -->
+    <!-- 导出格式选项 -->
     <div class="export-panel__field">
-      <label class="export-panel__label">输出路径</label>
-      <input
-        v-model="outputPath"
-        type="text"
-        class="export-panel__input"
-        placeholder="指定导出文件的路径"
-        :disabled="status === 'exporting'"
-      />
-    </div>
-
-    <!-- 导出格式选择 -->
-    <div class="export-panel__field">
-      <label class="export-panel__label">导出格式</label>
-      <div class="export-panel__format-grid">
-        <!-- .card 文件 -->
-        <button
-          type="button"
-          class="export-panel__format-btn"
-          :disabled="status === 'exporting'"
-          @click="handleExport('card')"
-        >
-          <span class="export-panel__format-icon">📦</span>
-          <div class="export-panel__format-info">
-            <span class="export-panel__format-title">卡片文件</span>
-            <span class="export-panel__format-desc">.card 格式</span>
-          </div>
-        </button>
-
-        <!-- HTML 网页 -->
-        <button
-          type="button"
-          class="export-panel__format-btn"
-          :disabled="status === 'exporting'"
-          @click="handleExport('html')"
-        >
-          <span class="export-panel__format-icon">🌐</span>
-          <div class="export-panel__format-info">
-            <span class="export-panel__format-title">网页</span>
-            <span class="export-panel__format-desc">HTML 格式</span>
-          </div>
-        </button>
-
-        <!-- PDF 文档 -->
-        <button
-          type="button"
-          class="export-panel__format-btn"
-          :disabled="status === 'exporting'"
-          @click="handleExport('pdf')"
-        >
-          <span class="export-panel__format-icon">📄</span>
-          <div class="export-panel__format-info">
-            <span class="export-panel__format-title">文档</span>
-            <span class="export-panel__format-desc">PDF 格式</span>
-          </div>
-        </button>
-
-        <!-- 图片 -->
-        <button
-          type="button"
-          class="export-panel__format-btn"
-          :disabled="status === 'exporting'"
-          @click="handleExport('image')"
-        >
-          <span class="export-panel__format-icon">🖼️</span>
-          <div class="export-panel__format-info">
-            <span class="export-panel__format-title">图片</span>
-            <span class="export-panel__format-desc">PNG/JPG 格式</span>
-          </div>
-        </button>
-      </div>
-    </div>
-
-    <!-- 格式特定选项 -->
-    <div v-if="selectedFormat === 'html'" class="export-panel__options">
-      <label class="export-panel__checkbox">
-        <input v-model="includeAssets" type="checkbox" :disabled="status === 'exporting'" />
-        <span>包含资源文件</span>
+      <label class="export-panel__label">
+        {{ t('card_settings.export_format') }}
       </label>
-    </div>
-
-    <div v-if="selectedFormat === 'pdf'" class="export-panel__options">
-      <div class="export-panel__option-row">
-        <label class="export-panel__option-label">页面格式</label>
-        <select v-model="pageFormat" class="export-panel__select" :disabled="status === 'exporting'">
-          <option value="a4">A4</option>
-          <option value="a5">A5</option>
-          <option value="letter">Letter</option>
-        </select>
-      </div>
-      <div class="export-panel__option-row">
-        <label class="export-panel__option-label">页面方向</label>
-        <select
-          v-model="orientation"
-          class="export-panel__select"
-          :disabled="status === 'exporting'"
+      <div class="export-panel__grid">
+        <button
+          v-for="fmt in exportFormats"
+          :key="fmt.key"
+          type="button"
+          class="export-panel__format-card"
+          :disabled="exportStatus === 'exporting'"
+          @click="handleExport(fmt.key)"
         >
-          <option value="portrait">纵向</option>
-          <option value="landscape">横向</option>
-        </select>
+          <span class="export-panel__format-icon" aria-hidden="true">{{ fmt.icon }}</span>
+          <div class="export-panel__format-text">
+            <span class="export-panel__format-title">{{ fmt.label }}</span>
+            <span class="export-panel__format-desc">{{ fmt.desc }}</span>
+          </div>
+        </button>
       </div>
     </div>
 
-    <div v-if="selectedFormat === 'image'" class="export-panel__options">
-      <div class="export-panel__option-row">
-        <label class="export-panel__option-label">图片格式</label>
-        <select v-model="imageFormat" class="export-panel__select" :disabled="status === 'exporting'">
-          <option value="png">PNG</option>
-          <option value="jpg">JPG</option>
-        </select>
-      </div>
-      <div class="export-panel__option-row">
-        <label class="export-panel__option-label">缩放比例</label>
-        <input
-          v-model.number="scale"
-          type="number"
-          min="1"
-          max="4"
-          step="0.5"
-          class="export-panel__input-small"
-          :disabled="status === 'exporting'"
-        />
-      </div>
-    </div>
-
-    <!-- 进度显示 -->
-    <div v-if="status !== 'idle'" class="export-panel__progress-container">
-      <div class="export-panel__progress-bar">
-        <div
-          class="export-panel__progress-fill"
-          :style="{ width: `${progress}%` }"
-          :class="{
-            'export-panel__progress-fill--success': status === 'success',
-            'export-panel__progress-fill--error': status === 'error',
-          }"
-        ></div>
-      </div>
+    <!-- 导出进度 -->
+    <div v-if="exportStatus !== 'idle'" class="export-panel__progress">
+      <Progress
+        :percent="exportProgress"
+        :status="progressStatus"
+        :stroke-width="6"
+        :show-info="false"
+      />
       <p
-        class="export-panel__progress-message"
+        class="export-panel__message"
         :class="{
-          'export-panel__progress-message--success': status === 'success',
-          'export-panel__progress-message--error': status === 'error',
+          'export-panel__message--success': exportStatus === 'success',
+          'export-panel__message--error': exportStatus === 'error',
         }"
       >
-        {{ message }}
+        {{ exportMessage }}
       </p>
-
-      <!-- 取消按钮 -->
-      <button
-        v-if="status === 'exporting'"
-        type="button"
-        class="export-panel__cancel-btn"
-        @click="handleCancel"
-      >
-        取消导出
-      </button>
     </div>
   </div>
 </template>
@@ -270,188 +381,107 @@ async function handleCancel(): Promise<void> {
 .export-panel {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--chips-spacing-lg, 20px);
 }
 
 .export-panel__field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--chips-spacing-sm, 8px);
 }
 
 .export-panel__label {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text-primary, #333);
+  font-size: var(--chips-font-size-sm, 14px);
+  font-weight: var(--chips-font-weight-medium, 500);
+  color: var(--chips-color-text, #111827);
 }
 
-.export-panel__input {
-  padding: 8px 12px;
-  border: 1px solid var(--color-border, #ddd);
-  border-radius: var(--radius-md, 6px);
-  font-size: 14px;
-  transition: border-color 0.2s;
-}
-
-.export-panel__input:focus {
-  outline: none;
-  border-color: var(--color-primary, #3b82f6);
-}
-
-.export-panel__input:disabled {
-  background: var(--color-bg-disabled, #f5f5f5);
-  cursor: not-allowed;
-}
-
-.export-panel__format-grid {
+/* 导出格式网格 - 2x2 */
+.export-panel__grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  gap: var(--chips-spacing-md, 16px);
 }
 
-.export-panel__format-btn {
+.export-panel__format-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px;
-  border: 2px solid var(--color-border, #ddd);
-  border-radius: var(--radius-md, 8px);
-  background: var(--color-surface, #fff);
+  gap: var(--chips-spacing-md, 16px);
+  padding: var(--chips-spacing-md, 16px);
+  border: 2px solid var(--chips-color-border, #e5e7eb);
+  border-radius: var(--chips-radius-md, 8px);
+  background: var(--chips-color-surface, #ffffff);
   cursor: pointer;
-  transition: all 0.2s;
+  text-align: left;
+  transition: border-color var(--chips-transition-fast, 150ms ease),
+    background-color var(--chips-transition-fast, 150ms ease);
 }
 
-.export-panel__format-btn:hover:not(:disabled) {
-  border-color: var(--color-primary, #3b82f6);
-  background: var(--color-bg-hover, #f0f9ff);
+.export-panel__format-card:hover:not(:disabled) {
+  border-color: var(--chips-color-primary, #3b82f6);
+  background: color-mix(in srgb, var(--chips-color-primary) 3%, transparent);
 }
 
-.export-panel__format-btn:disabled {
+.export-panel__format-card:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 .export-panel__format-icon {
-  font-size: 32px;
+  font-size: 28px;
+  flex-shrink: 0;
+  line-height: 1;
 }
 
-.export-panel__format-info {
+.export-panel__format-text {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  gap: 2px;
 }
 
 .export-panel__format-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text-primary, #333);
+  font-size: var(--chips-font-size-sm, 14px);
+  font-weight: var(--chips-font-weight-medium, 500);
+  color: var(--chips-color-text, #111827);
 }
 
 .export-panel__format-desc {
   font-size: 12px;
-  color: var(--color-text-secondary, #666);
+  color: var(--chips-color-text-secondary, #6b7280);
 }
 
-.export-panel__options {
-  padding: 16px;
-  background: var(--color-bg-secondary, #f9fafb);
-  border-radius: var(--radius-md, 8px);
+/* 进度区域 */
+.export-panel__progress {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--chips-spacing-sm, 8px);
+  padding: var(--chips-spacing-md, 16px);
+  background: color-mix(in srgb, var(--chips-color-text) 3%, transparent);
+  border-radius: var(--chips-radius-md, 8px);
 }
 
-.export-panel__checkbox {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  cursor: pointer;
+.export-panel__progress :deep(.chips-progress__outer) {
+  background: var(--chips-color-border, #e5e7eb);
+  border-radius: 999px;
 }
 
-.export-panel__option-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.export-panel__progress :deep(.chips-progress__inner) {
+  border-radius: 999px;
 }
 
-.export-panel__option-label {
-  font-size: 14px;
-  color: var(--color-text-primary, #333);
-}
-
-.export-panel__select,
-.export-panel__input-small {
-  padding: 6px 10px;
-  border: 1px solid var(--color-border, #ddd);
-  border-radius: var(--radius-sm, 4px);
-  font-size: 14px;
-}
-
-.export-panel__input-small {
-  width: 80px;
-}
-
-.export-panel__progress-container {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  background: var(--color-bg-secondary, #f9fafb);
-  border-radius: var(--radius-md, 8px);
-}
-
-.export-panel__progress-bar {
-  width: 100%;
-  height: 8px;
-  background: var(--color-bg-tertiary, #e5e7eb);
-  border-radius: var(--radius-full, 999px);
-  overflow: hidden;
-}
-
-.export-panel__progress-fill {
-  height: 100%;
-  background: var(--color-primary, #3b82f6);
-  transition: width 0.3s ease, background 0.3s ease;
-}
-
-.export-panel__progress-fill--success {
-  background: var(--color-success, #10b981);
-}
-
-.export-panel__progress-fill--error {
-  background: var(--color-error, #ef4444);
-}
-
-.export-panel__progress-message {
-  font-size: 14px;
-  color: var(--color-text-secondary, #666);
+.export-panel__message {
+  margin: 0;
+  font-size: 13px;
+  color: var(--chips-color-text-secondary, #6b7280);
   text-align: center;
+  line-height: 1.5;
 }
 
-.export-panel__progress-message--success {
-  color: var(--color-success, #10b981);
+.export-panel__message--success {
+  color: var(--chips-color-success, #10b981);
 }
 
-.export-panel__progress-message--error {
-  color: var(--color-error, #ef4444);
-}
-
-.export-panel__cancel-btn {
-  align-self: center;
-  padding: 6px 16px;
-  border: 1px solid var(--color-border, #ddd);
-  border-radius: var(--radius-md, 6px);
-  background: var(--color-surface, #fff);
-  color: var(--color-text-primary, #333);
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.export-panel__cancel-btn:hover {
-  background: var(--color-bg-hover, #f5f5f5);
+.export-panel__message--error {
+  color: var(--chips-color-error, #ef4444);
 }
 </style>

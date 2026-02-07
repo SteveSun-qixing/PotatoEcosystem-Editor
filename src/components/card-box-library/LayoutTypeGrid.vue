@@ -2,51 +2,28 @@
 /**
  * 布局类型网格组件
  * @module components/card-box-library/LayoutTypeGrid
- * @description 显示 8 种箱子布局类型，支持分类显示和拖放
+ * @description 箱子布局类型网格，支持拖放
  */
 
 import { computed } from 'vue';
 import type { LayoutTypeDefinition, DragData } from './types';
-import { layoutCategories, getLayoutTypesByCategory } from './data';
+import { layoutTypes as allLayoutTypes } from './data';
+import { t } from '@/services/i18n-service';
 
 interface Props {
   /** 布局类型列表（可选，用于搜索过滤后的结果） */
   types?: LayoutTypeDefinition[];
-  /** 是否显示分类标题 */
-  showCategories?: boolean;
 }
 
-const props = withDefaults(defineProps<Props>(), {
-  showCategories: true,
-});
+const props = withDefaults(defineProps<Props>(), {});
 
 const emit = defineEmits<{
   /** 拖放开始 */
   dragStart: [data: DragData, event: DragEvent];
 }>();
 
-/** 按分类组织的布局类型 */
-const categorizedTypes = computed(() => {
-  if (props.types) {
-    // 使用传入的类型（搜索结果）
-    const categories: { category: typeof layoutCategories[0]; types: LayoutTypeDefinition[] }[] = [];
-
-    layoutCategories.forEach((category) => {
-      const typesInCategory = props.types!.filter((t) => t.category === category.id);
-      if (typesInCategory.length > 0) {
-        categories.push({ category, types: typesInCategory });
-      }
-    });
-
-    return categories;
-  }
-
-  // 使用全部类型
-  return layoutCategories.map((category) => ({
-    category,
-    types: getLayoutTypesByCategory(category.id),
-  }));
-});
+/** 获取类型列表 */
+const displayTypes = computed(() => props.types ?? allLayoutTypes);
 
 /**
  * 处理拖放开始
@@ -55,7 +32,7 @@ function handleDragStart(type: LayoutTypeDefinition, event: DragEvent): void {
   const data: DragData = {
     type: 'layout',
     typeId: type.id,
-    name: type.name,
+    name: t(type.name),
   };
 
   emit('dragStart', data, event);
@@ -64,55 +41,22 @@ function handleDragStart(type: LayoutTypeDefinition, event: DragEvent): void {
 
 <template>
   <div class="layout-type-grid">
-    <template v-if="showCategories">
+    <div class="layout-type-grid__items">
       <div
-        v-for="{ category, types: categoryTypes } in categorizedTypes"
-        :key="category.id"
-        class="layout-type-grid__category"
+        v-for="type in displayTypes"
+        :key="type.id"
+        class="layout-type-grid__item"
+        draggable="true"
+        :title="t(type.description)"
+        @dragstart="handleDragStart(type, $event)"
       >
-        <div class="layout-type-grid__category-header">
-          <span class="layout-type-grid__category-icon">{{ category.icon }}</span>
-          <span class="layout-type-grid__category-name">{{ category.name }}</span>
-          <span class="layout-type-grid__category-count">{{ categoryTypes.length }}</span>
-        </div>
-
-        <div class="layout-type-grid__items">
-          <div
-            v-for="type in categoryTypes"
-            :key="type.id"
-            class="layout-type-grid__item"
-            draggable="true"
-            :title="type.description"
-            @dragstart="handleDragStart(type, $event)"
-          >
-            <span class="layout-type-grid__item-icon">{{ type.icon }}</span>
-            <div class="layout-type-grid__item-info">
-              <span class="layout-type-grid__item-name">{{ type.name }}</span>
-              <span class="layout-type-grid__item-desc">{{ type.description }}</span>
-            </div>
-          </div>
+        <span class="layout-type-grid__item-icon">{{ type.icon }}</span>
+        <div class="layout-type-grid__item-info">
+          <span class="layout-type-grid__item-name">{{ t(type.name) }}</span>
+          <span class="layout-type-grid__item-desc">{{ t(type.description) }}</span>
         </div>
       </div>
-    </template>
-
-    <template v-else>
-      <div class="layout-type-grid__items layout-type-grid__items--flat">
-        <div
-          v-for="type in types"
-          :key="type.id"
-          class="layout-type-grid__item"
-          draggable="true"
-          :title="type.description"
-          @dragstart="handleDragStart(type, $event)"
-        >
-          <span class="layout-type-grid__item-icon">{{ type.icon }}</span>
-          <div class="layout-type-grid__item-info">
-            <span class="layout-type-grid__item-name">{{ type.name }}</span>
-            <span class="layout-type-grid__item-desc">{{ type.description }}</span>
-          </div>
-        </div>
-      </div>
-    </template>
+    </div>
   </div>
 </template>
 
@@ -120,48 +64,12 @@ function handleDragStart(type: LayoutTypeDefinition, event: DragEvent): void {
 .layout-type-grid {
   display: flex;
   flex-direction: column;
-  gap: var(--chips-spacing-md, 12px);
-}
-
-.layout-type-grid__category {
-  display: flex;
-  flex-direction: column;
-  gap: var(--chips-spacing-sm, 8px);
-}
-
-.layout-type-grid__category-header {
-  display: flex;
-  align-items: center;
-  gap: var(--chips-spacing-xs, 4px);
-  padding: var(--chips-spacing-xs, 4px) 0;
-  border-bottom: 1px solid var(--chips-color-border, #e0e0e0);
-}
-
-.layout-type-grid__category-icon {
-  font-size: var(--chips-font-size-md, 16px);
-}
-
-.layout-type-grid__category-name {
-  font-size: var(--chips-font-size-sm, 14px);
-  font-weight: var(--chips-font-weight-medium, 500);
-  color: var(--chips-color-text-primary, #1a1a1a);
-}
-
-.layout-type-grid__category-count {
-  font-size: var(--chips-font-size-xs, 12px);
-  color: var(--chips-color-text-tertiary, #999);
-  margin-left: auto;
 }
 
 .layout-type-grid__items {
   display: flex;
   flex-direction: column;
   gap: var(--chips-spacing-sm, 8px);
-}
-
-.layout-type-grid__items--flat {
-  display: flex;
-  flex-direction: column;
 }
 
 .layout-type-grid__item {

@@ -6,8 +6,11 @@
  */
 
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { Button } from '@chips/components';
 import { useCommandManager } from '@/core/command-manager';
+import { useEditorStore } from '@/core/state';
 import type { CommandHistory } from '@/core/command-manager';
+import { t } from '@/services/i18n-service';
 
 /** 组件属性 */
 interface Props {
@@ -38,6 +41,7 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<Emits>();
 
 const commandManager = useCommandManager();
+const editorStore = useEditorStore();
 
 // 状态
 const undoHistory = ref<CommandHistory[]>([]);
@@ -73,7 +77,7 @@ const displayHistory = computed(() => {
 // 格式化时间
 const formatTime = (timestamp: number): string => {
   const date = new Date(timestamp);
-  return date.toLocaleTimeString('zh-CN', {
+  return date.toLocaleTimeString(editorStore.locale || undefined, {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
@@ -86,11 +90,11 @@ const formatRelativeTime = (timestamp: number): string => {
   const diff = now - timestamp;
   
   if (diff < 60000) {
-    return '刚刚';
+    return t('history_panel.just_now');
   } else if (diff < 3600000) {
-    return `${Math.floor(diff / 60000)} 分钟前`;
+    return t('history_panel.minutes_ago', { count: Math.floor(diff / 60000) });
   } else if (diff < 86400000) {
-    return `${Math.floor(diff / 3600000)} 小时前`;
+    return t('history_panel.hours_ago', { count: Math.floor(diff / 3600000) });
   } else {
     return formatTime(timestamp);
   }
@@ -98,22 +102,22 @@ const formatRelativeTime = (timestamp: number): string => {
 
 // 获取操作描述（模拟 i18n）
 const getDescription = (key: string): string => {
-  // 开发阶段的简单翻译映射
   const descriptions: Record<string, string> = {
-    'command.add_base_card': '添加卡片',
-    'command.remove_base_card': '删除卡片',
-    'command.move_base_card': '移动卡片',
-    'command.update_base_card_config': '更新卡片配置',
-    'command.batch_operation': '批量操作',
-    'command.create_window': '创建窗口',
-    'command.close_window': '关闭窗口',
-    'command.move_window': '移动窗口',
-    'command.resize_window': '调整窗口大小',
-    'command.set_window_state': '设置窗口状态',
-    'command.batch_window_operation': '批量窗口操作',
+    'command.add_base_card': 'history_panel.command_add_base_card',
+    'command.remove_base_card': 'history_panel.command_remove_base_card',
+    'command.move_base_card': 'history_panel.command_move_base_card',
+    'command.update_base_card_config': 'history_panel.command_update_base_card_config',
+    'command.batch_operation': 'history_panel.command_batch_operation',
+    'command.create_window': 'history_panel.command_create_window',
+    'command.close_window': 'history_panel.command_close_window',
+    'command.move_window': 'history_panel.command_move_window',
+    'command.resize_window': 'history_panel.command_resize_window',
+    'command.set_window_state': 'history_panel.command_set_window_state',
+    'command.batch_window_operation': 'history_panel.command_batch_window_operation',
   };
-  
-  return descriptions[key] || key;
+
+  const translationKey = descriptions[key];
+  return translationKey ? t(translationKey) : key;
 };
 
 // 更新历史记录
@@ -205,36 +209,42 @@ watch(() => props.maxItems, () => {
   <div class="history-panel" :class="{ compact }">
     <!-- 工具栏 -->
     <div class="history-toolbar">
-      <button
+      <Button
         class="history-btn"
         :disabled="!canUndo || isLoading"
-        title="撤销 (Ctrl+Z)"
+        :title="t('history_panel.undo_title')"
+        html-type="button"
+        type="text"
         @click="handleUndo"
       >
         <span class="history-btn-icon">↶</span>
-        <span v-if="!compact" class="history-btn-text">撤销</span>
-      </button>
+        <span v-if="!compact" class="history-btn-text">{{ t('history_panel.undo') }}</span>
+      </Button>
       
-      <button
+      <Button
         class="history-btn"
         :disabled="!canRedo || isLoading"
-        title="重做 (Ctrl+Shift+Z)"
+        :title="t('history_panel.redo_title')"
+        html-type="button"
+        type="text"
         @click="handleRedo"
       >
         <span class="history-btn-icon">↷</span>
-        <span v-if="!compact" class="history-btn-text">重做</span>
-      </button>
+        <span v-if="!compact" class="history-btn-text">{{ t('history_panel.redo') }}</span>
+      </Button>
       
       <div class="history-toolbar-spacer"></div>
       
-      <button
+      <Button
         class="history-btn history-btn-clear"
         :disabled="displayHistory.length === 0"
-        title="清空历史"
+        :title="t('history_panel.clear')"
+        html-type="button"
+        type="text"
         @click="handleClear"
       >
         <span class="history-btn-icon">🗑</span>
-      </button>
+      </Button>
     </div>
     
     <!-- 历史列表 -->
@@ -265,7 +275,7 @@ watch(() => props.maxItems, () => {
         </div>
         
         <div v-if="item.type === 'redo'" class="history-item-badge">
-          待重做
+          {{ t('history_panel.badge_redo') }}
         </div>
       </div>
     </div>
@@ -273,14 +283,14 @@ watch(() => props.maxItems, () => {
     <!-- 空状态 -->
     <div v-else class="history-empty">
       <div class="history-empty-icon">📋</div>
-      <div class="history-empty-text">暂无操作历史</div>
+      <div class="history-empty-text">{{ t('history_panel.empty') }}</div>
     </div>
     
     <!-- 状态栏 -->
     <div class="history-status">
-      <span>撤销: {{ undoHistory.length }}</span>
+      <span>{{ t('history_panel.status_undo') }}: {{ undoHistory.length }}</span>
       <span class="history-status-divider">|</span>
-      <span>重做: {{ redoHistory.length }}</span>
+      <span>{{ t('history_panel.status_redo') }}: {{ redoHistory.length }}</span>
     </div>
   </div>
 </template>
@@ -290,41 +300,41 @@ watch(() => props.maxItems, () => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--color-bg-primary, #ffffff);
-  border: 1px solid var(--color-border, #e0e0e0);
-  border-radius: var(--radius-md, 8px);
+  background: var(--chips-color-surface, #ffffff);
+  border: 1px solid var(--chips-color-border, #e0e0e0);
+  border-radius: var(--chips-radius-md, 8px);
   overflow: hidden;
 }
 
 .history-panel.compact {
-  font-size: var(--font-size-small, 12px);
+  font-size: var(--chips-font-size-sm, 12px);
 }
 
 /* 工具栏 */
 .history-toolbar {
   display: flex;
   align-items: center;
-  gap: var(--spacing-xs, 4px);
-  padding: var(--spacing-sm, 8px);
-  border-bottom: 1px solid var(--color-border, #e0e0e0);
-  background: var(--color-bg-secondary, #f5f5f5);
+  gap: var(--chips-spacing-xs, 4px);
+  padding: var(--chips-spacing-sm, 8px);
+  border-bottom: 1px solid var(--chips-color-border, #e0e0e0);
+  background: var(--chips-color-background, #f5f5f5);
 }
 
 .history-btn {
   display: flex;
   align-items: center;
-  gap: var(--spacing-xs, 4px);
-  padding: var(--spacing-xs, 4px) var(--spacing-sm, 8px);
+  gap: var(--chips-spacing-xs, 4px);
+  padding: var(--chips-spacing-xs, 4px) var(--chips-spacing-sm, 8px);
   border: none;
-  border-radius: var(--radius-sm, 4px);
-  background: var(--color-bg-primary, #ffffff);
-  color: var(--color-text-primary, #333333);
+  border-radius: var(--chips-radius-sm, 4px);
+  background: var(--chips-color-surface, #ffffff);
+  color: var(--chips-color-text, #333333);
   cursor: pointer;
   transition: background-color 0.2s, opacity 0.2s;
 }
 
 .history-btn:hover:not(:disabled) {
-  background: var(--color-bg-hover, #e8e8e8);
+  background: color-mix(in srgb, var(--chips-color-text) 6%, transparent);
 }
 
 .history-btn:disabled {
@@ -333,11 +343,11 @@ watch(() => props.maxItems, () => {
 }
 
 .history-btn-icon {
-  font-size: var(--font-size-medium, 14px);
+  font-size: var(--chips-font-size-sm, 14px);
 }
 
 .history-btn-text {
-  font-size: var(--font-size-small, 12px);
+  font-size: var(--chips-font-size-sm, 12px);
 }
 
 .history-btn-clear {
@@ -345,8 +355,8 @@ watch(() => props.maxItems, () => {
 }
 
 .history-btn-clear:hover:not(:disabled) {
-  background: var(--color-danger-light, #ffebee);
-  color: var(--color-danger, #f44336);
+  background: color-mix(in srgb, var(--chips-color-error) 15%, transparent);
+  color: var(--chips-color-error, #f44336);
 }
 
 .history-toolbar-spacer {
@@ -357,29 +367,29 @@ watch(() => props.maxItems, () => {
 .history-list {
   flex: 1;
   overflow-y: auto;
-  padding: var(--spacing-xs, 4px);
+  padding: var(--chips-spacing-xs, 4px);
 }
 
 .history-item {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
-  padding: var(--spacing-sm, 8px);
-  border-radius: var(--radius-sm, 4px);
+  gap: var(--chips-spacing-sm, 8px);
+  padding: var(--chips-spacing-sm, 8px);
+  border-radius: var(--chips-radius-sm, 4px);
   cursor: pointer;
   transition: background-color 0.2s;
 }
 
 .history-item:hover {
-  background: var(--color-bg-hover, #f0f0f0);
+  background: color-mix(in srgb, var(--chips-color-text) 4%, transparent);
 }
 
 .history-item--current {
-  background: var(--color-primary-light, #e3f2fd);
+  background: color-mix(in srgb, var(--chips-color-primary) 12%, transparent);
 }
 
 .history-item--current:hover {
-  background: var(--color-primary-light, #e3f2fd);
+  background: color-mix(in srgb, var(--chips-color-primary) 12%, transparent);
 }
 
 .history-item--redo {
@@ -389,11 +399,11 @@ watch(() => props.maxItems, () => {
 .history-item-indicator {
   width: 16px;
   text-align: center;
-  color: var(--color-text-secondary, #666666);
+  color: var(--chips-color-text-secondary, #666666);
 }
 
 .current-marker {
-  color: var(--color-primary, #2196f3);
+  color: var(--chips-color-primary, #2196f3);
 }
 
 .history-item-content {
@@ -402,25 +412,25 @@ watch(() => props.maxItems, () => {
 }
 
 .history-item-description {
-  font-size: var(--font-size-small, 12px);
-  color: var(--color-text-primary, #333333);
+  font-size: var(--chips-font-size-sm, 12px);
+  color: var(--chips-color-text, #333333);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .history-item-time {
-  font-size: var(--font-size-xs, 10px);
-  color: var(--color-text-tertiary, #999999);
+  font-size: 10px;
+  color: var(--chips-color-text-disabled, #999999);
   margin-top: 2px;
 }
 
 .history-item-badge {
-  font-size: var(--font-size-xs, 10px);
+  font-size: 10px;
   padding: 2px 6px;
-  background: var(--color-warning-light, #fff3e0);
-  color: var(--color-warning, #ff9800);
-  border-radius: var(--radius-sm, 4px);
+  background: color-mix(in srgb, var(--chips-color-warning) 18%, transparent);
+  color: var(--chips-color-warning, #ff9800);
+  border-radius: var(--chips-radius-sm, 4px);
 }
 
 /* 空状态 */
@@ -430,16 +440,16 @@ watch(() => props.maxItems, () => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-tertiary, #999999);
+  color: var(--chips-color-text-disabled, #999999);
 }
 
 .history-empty-icon {
   font-size: 48px;
-  margin-bottom: var(--spacing-sm, 8px);
+  margin-bottom: var(--chips-spacing-sm, 8px);
 }
 
 .history-empty-text {
-  font-size: var(--font-size-small, 12px);
+  font-size: var(--chips-font-size-sm, 12px);
 }
 
 /* 状态栏 */
@@ -447,21 +457,21 @@ watch(() => props.maxItems, () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--spacing-sm, 8px);
-  padding: var(--spacing-xs, 4px) var(--spacing-sm, 8px);
-  border-top: 1px solid var(--color-border, #e0e0e0);
-  background: var(--color-bg-secondary, #f5f5f5);
-  font-size: var(--font-size-xs, 10px);
-  color: var(--color-text-tertiary, #999999);
+  gap: var(--chips-spacing-sm, 8px);
+  padding: var(--chips-spacing-xs, 4px) var(--chips-spacing-sm, 8px);
+  border-top: 1px solid var(--chips-color-border, #e0e0e0);
+  background: var(--chips-color-background, #f5f5f5);
+  font-size: 10px;
+  color: var(--chips-color-text-disabled, #999999);
 }
 
 .history-status-divider {
-  color: var(--color-border, #e0e0e0);
+  color: var(--chips-color-border, #e0e0e0);
 }
 
 /* 紧凑模式调整 */
 .compact .history-toolbar {
-  padding: var(--spacing-xs, 4px);
+  padding: var(--chips-spacing-xs, 4px);
 }
 
 .compact .history-btn {
@@ -469,10 +479,10 @@ watch(() => props.maxItems, () => {
 }
 
 .compact .history-item {
-  padding: var(--spacing-xs, 4px);
+  padding: var(--chips-spacing-xs, 4px);
 }
 
 .compact .history-status {
-  padding: 2px var(--spacing-xs, 4px);
+  padding: 2px var(--chips-spacing-xs, 4px);
 }
 </style>

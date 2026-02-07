@@ -6,8 +6,10 @@
  */
 
 import { ref, computed, watch, onMounted } from 'vue';
+import { Button, Checkbox, Input, Select, Textarea } from '@chips/components';
 import type { BaseCardInfo } from '@/core/state/stores/card';
 import type { FormField, DefaultEditorProps } from './types';
+import { t } from '@/services/i18n-service';
 
 // ==================== Props ====================
 interface Props {
@@ -75,8 +77,19 @@ const formattedJson = computed(() => {
 });
 
 /** 卡片类型显示名称 */
+/** 卡片类型显示名称，统一使用 PascalCase（卡片文件格式规范标准） */
 const cardTypeName = computed(() => {
-  return props.baseCard.type;
+  const typeNames: Record<string, string> = {
+    RichTextCard: t('card_window.type_rich_text'),
+    MarkdownCard: t('card_window.type_markdown'),
+    ImageCard: t('card_window.type_image'),
+    VideoCard: t('card_window.type_video'),
+    AudioCard: t('card_window.type_audio'),
+    CodeBlockCard: t('card_window.type_code'),
+    ListCard: t('card_window.type_list'),
+  };
+
+  return typeNames[props.baseCard.type] || props.baseCard.type;
 });
 
 // ==================== Methods ====================
@@ -117,13 +130,18 @@ function generateFieldsFromSchema(schema: Record<string, unknown>): FormField[] 
   
   for (const [key, value] of Object.entries(properties)) {
     const propSchema = value as Record<string, unknown>;
+    const title = propSchema.title as string | undefined;
+    const description = propSchema.description as string | undefined;
+    const label = title ?? description ?? key;
+    const placeholder = title ? description : undefined;
+
     const field: FormField = {
       key,
-      label: (propSchema.title as string) ?? key,
+      label,
       type: mapSchemaType(propSchema.type as string),
       default: propSchema.default,
       required: required.includes(key),
-      placeholder: propSchema.description as string,
+      placeholder,
     };
     
     // 处理枚举值
@@ -241,7 +259,7 @@ function parseJsonContent(): boolean {
     jsonError.value = null;
     return true;
   } catch (error) {
-    jsonError.value = error instanceof Error ? error.message : 'JSON 解析错误';
+    jsonError.value = error instanceof Error ? error.message : t('default_editor.json_parse_error');
     return false;
   }
 }
@@ -249,9 +267,8 @@ function parseJsonContent(): boolean {
 /**
  * 处理 JSON 内容变更
  */
-function handleJsonChange(event: Event): void {
-  const target = event.target as HTMLTextAreaElement;
-  jsonContent.value = target.value;
+function handleJsonChange(value: string): void {
+  jsonContent.value = value;
   
   // 尝试解析并更新配置
   if (parseJsonContent()) {
@@ -285,20 +302,29 @@ function validateField(key: string, value: unknown): void {
   validationErrors.value.delete(key);
   
   // 必填验证
-  if (field.required && (value === undefined || value === null || value === '')) {
-    validationErrors.value.set(key, `${field.label} 是必填项`);
-    return;
-  }
+    if (field.required && (value === undefined || value === null || value === '')) {
+      validationErrors.value.set(
+        key,
+        t('default_editor.validation_required', { field: t(field.label) })
+      );
+      return;
+    }
   
   // 自定义验证规则
   if (field.validation) {
     if (typeof value === 'number') {
       if (field.validation.min !== undefined && value < field.validation.min) {
-        validationErrors.value.set(key, `${field.label} 不能小于 ${field.validation.min}`);
+        validationErrors.value.set(
+          key,
+          t('default_editor.validation_min', { field: t(field.label), min: field.validation.min })
+        );
         return;
       }
       if (field.validation.max !== undefined && value > field.validation.max) {
-        validationErrors.value.set(key, `${field.label} 不能大于 ${field.validation.max}`);
+        validationErrors.value.set(
+          key,
+          t('default_editor.validation_max', { field: t(field.label), max: field.validation.max })
+        );
         return;
       }
     }
@@ -306,7 +332,11 @@ function validateField(key: string, value: unknown): void {
     if (typeof value === 'string' && field.validation.pattern) {
       const regex = new RegExp(field.validation.pattern);
       if (!regex.test(value)) {
-        validationErrors.value.set(key, field.validation.message ?? `${field.label} 格式不正确`);
+        validationErrors.value.set(
+          key,
+          field.validation.message ??
+            t('default_editor.validation_pattern', { field: t(field.label) })
+        );
         return;
       }
     }
@@ -406,31 +436,34 @@ defineExpose({
       </div>
       
       <div class="default-editor__actions">
-        <button
+        <Button
           class="default-editor__btn default-editor__btn--mode"
-          type="button"
-          :title="isJsonMode ? '切换到表单模式' : '切换到 JSON 模式'"
+          html-type="button"
+          type="text"
+          :title="isJsonMode ? t('default_editor.switch_to_form') : t('default_editor.switch_to_json')"
           @click="toggleMode"
         >
           {{ isJsonMode ? '📝' : '{ }' }}
-        </button>
-        <button
+        </Button>
+        <Button
           v-if="isJsonMode"
           class="default-editor__btn"
-          type="button"
-          title="格式化 JSON"
+          html-type="button"
+          type="text"
+          :title="t('default_editor.format_json')"
           @click="formatJson"
         >
           ✨
-        </button>
-        <button
+        </Button>
+        <Button
           class="default-editor__btn"
-          type="button"
-          title="重置配置"
+          html-type="button"
+          type="text"
+          :title="t('default_editor.reset_config')"
           @click="resetConfig"
         >
           ↺
-        </button>
+        </Button>
       </div>
     </div>
 
@@ -439,13 +472,13 @@ defineExpose({
       v-if="isJsonMode"
       class="default-editor__json"
     >
-      <textarea
+      <Textarea
         class="default-editor__json-input"
         :class="{ 'default-editor__json-input--error': jsonError }"
-        :value="jsonContent"
-        spellcheck="false"
-        @input="handleJsonChange"
-      ></textarea>
+        :model-value="jsonContent"
+        :status="jsonError ? 'error' : undefined"
+        @update:model-value="handleJsonChange"
+      />
       <Transition name="default-editor-fade">
         <div
           v-if="jsonError"
@@ -465,7 +498,7 @@ defineExpose({
         v-if="formFields.length === 0"
         class="default-editor__empty"
       >
-        <p>暂无可编辑的配置项</p>
+        <p>{{ t('default_editor.empty') }}</p>
       </div>
       
       <div
@@ -478,7 +511,7 @@ defineExpose({
           class="default-editor__label"
           :for="`field-${field.key}`"
         >
-          {{ field.label }}
+          {{ t(field.label) }}
           <span
             v-if="field.required"
             class="default-editor__required"
@@ -486,89 +519,77 @@ defineExpose({
         </label>
         
         <!-- 字符串输入 -->
-        <input
+        <Input
           v-if="field.type === 'string'"
           :id="`field-${field.key}`"
           type="text"
           class="default-editor__input"
-          :value="getFieldValue(field.key)"
-          :placeholder="field.placeholder"
-          @input="(e) => handleFieldChange(field.key, (e.target as HTMLInputElement).value)"
+          :model-value="String(getFieldValue(field.key) ?? '')"
+          :placeholder="field.placeholder ? t(field.placeholder) : undefined"
+          @update:model-value="(value) => handleFieldChange(field.key, value)"
         />
         
         <!-- 数字输入 -->
-        <input
+        <Input
           v-if="field.type === 'number'"
           :id="`field-${field.key}`"
           type="number"
           class="default-editor__input"
-          :value="getFieldValue(field.key)"
+          :model-value="String(getFieldValue(field.key) ?? '')"
           :min="field.validation?.min"
           :max="field.validation?.max"
-          :placeholder="field.placeholder"
-          @input="(e) => handleFieldChange(field.key, Number((e.target as HTMLInputElement).value))"
+          :placeholder="field.placeholder ? t(field.placeholder) : undefined"
+          @update:model-value="(value) => handleFieldChange(field.key, Number(value))"
         />
         
         <!-- 布尔输入 -->
-        <label
+        <Checkbox
           v-if="field.type === 'boolean'"
-          class="default-editor__checkbox-wrapper"
+          class="default-editor__checkbox"
+          :model-value="!!getFieldValue(field.key)"
+          @update:model-value="(value) => handleFieldChange(field.key, value)"
         >
-          <input
-            :id="`field-${field.key}`"
-            type="checkbox"
-            class="default-editor__checkbox"
-            :checked="!!getFieldValue(field.key)"
-            @change="(e) => handleFieldChange(field.key, (e.target as HTMLInputElement).checked)"
-          />
-          <span class="default-editor__checkbox-label">启用</span>
-        </label>
+          {{ t('default_editor.checkbox_enable') }}
+        </Checkbox>
         
         <!-- 下拉选择 -->
-        <select
+        <Select
           v-if="field.type === 'select'"
           :id="`field-${field.key}`"
           class="default-editor__select"
-          :value="getFieldValue(field.key)"
-          @change="(e) => handleFieldChange(field.key, (e.target as HTMLSelectElement).value)"
-        >
-          <option
-            v-for="option in field.options"
-            :key="String(option.value)"
-            :value="option.value"
-          >
-            {{ option.label }}
-          </option>
-        </select>
+          :options="field.options ?? []"
+          :model-value="getFieldValue(field.key) ?? ''"
+          @update:model-value="(value) => handleFieldChange(field.key, value)"
+        />
         
         <!-- 多行文本 -->
-        <textarea
+        <Textarea
           v-if="field.type === 'textarea'"
           :id="`field-${field.key}`"
           class="default-editor__textarea"
-          :value="String(getFieldValue(field.key) ?? '')"
-          :placeholder="field.placeholder"
+          :model-value="String(getFieldValue(field.key) ?? '')"
+          :placeholder="field.placeholder ? t(field.placeholder) : undefined"
           rows="3"
-          @input="(e) => handleFieldChange(field.key, (e.target as HTMLTextAreaElement).value)"
-        ></textarea>
+          @update:model-value="(value) => handleFieldChange(field.key, value)"
+        />
         
         <!-- 颜色选择 -->
         <div
           v-if="field.type === 'color'"
           class="default-editor__color-wrapper"
         >
-          <input
+          <Input
             :id="`field-${field.key}`"
             type="color"
             class="default-editor__color"
-            :value="String(getFieldValue(field.key) ?? '#000000')"
-            @input="(e) => handleFieldChange(field.key, (e.target as HTMLInputElement).value)"
+            :model-value="String(getFieldValue(field.key) ?? '#000000')"
+            @update:model-value="(value) => handleFieldChange(field.key, value)"
           />
-          <input
+          <Input
             type="text"
             class="default-editor__color-text"
-            :value="getFieldValue(field.key)"
-            @input="(e) => handleFieldChange(field.key, (e.target as HTMLInputElement).value)"
+            :model-value="String(getFieldValue(field.key) ?? '')"
+            @update:model-value="(value) => handleFieldChange(field.key, value)"
           />
         </div>
         
@@ -662,6 +683,9 @@ defineExpose({
 .default-editor__json-input {
   flex: 1;
   width: 100%;
+}
+
+.default-editor__json-input .chips-textarea__inner {
   padding: var(--chips-spacing-md, 12px);
   font-family: var(--chips-font-mono, monospace);
   font-size: var(--chips-font-size-sm, 14px);
@@ -673,7 +697,7 @@ defineExpose({
   outline: none;
 }
 
-.default-editor__json-input--error {
+.default-editor__json-input--error .chips-textarea__inner {
   background: var(--chips-color-error-bg, #fef2f2);
 }
 
@@ -704,9 +728,9 @@ defineExpose({
   margin-bottom: var(--chips-spacing-md, 12px);
 }
 
-.default-editor__field--error .default-editor__input,
-.default-editor__field--error .default-editor__select,
-.default-editor__field--error .default-editor__textarea {
+.default-editor__field--error .default-editor__input .chips-input__inner,
+.default-editor__field--error .default-editor__select .chips-select__selector,
+.default-editor__field--error .default-editor__textarea .chips-textarea__inner {
   border-color: var(--chips-color-error, #ef4444);
 }
 
@@ -727,6 +751,12 @@ defineExpose({
 .default-editor__select,
 .default-editor__textarea {
   width: 100%;
+}
+
+.default-editor__input .chips-input__inner,
+.default-editor__select .chips-select__selector,
+.default-editor__textarea .chips-textarea__inner {
+  width: 100%;
   padding: var(--chips-spacing-sm, 8px);
   font-size: var(--chips-font-size-sm, 14px);
   color: var(--chips-color-text-primary, #1a1a1a);
@@ -738,33 +768,26 @@ defineExpose({
               box-shadow var(--chips-transition-fast, 0.15s) ease;
 }
 
-.default-editor__input:focus,
-.default-editor__select:focus,
-.default-editor__textarea:focus {
+.default-editor__input .chips-input__inner:focus,
+.default-editor__select .chips-select__selector:focus-within,
+.default-editor__textarea .chips-textarea__inner:focus {
   border-color: var(--chips-color-primary, #3b82f6);
   box-shadow: 0 0 0 3px var(--chips-color-primary-alpha, rgba(59, 130, 246, 0.1));
 }
 
-.default-editor__textarea {
+.default-editor__textarea .chips-textarea__inner {
   min-height: 80px;
   resize: vertical;
 }
 
 /* 复选框 */
-.default-editor__checkbox-wrapper {
-  display: flex;
+.default-editor__checkbox {
+  display: inline-flex;
   align-items: center;
   gap: var(--chips-spacing-sm, 8px);
-  cursor: pointer;
 }
 
-.default-editor__checkbox {
-  width: 18px;
-  height: 18px;
-  cursor: pointer;
-}
-
-.default-editor__checkbox-label {
+.default-editor__checkbox .chips-checkbox__label {
   font-size: var(--chips-font-size-sm, 14px);
   color: var(--chips-color-text-primary, #1a1a1a);
 }
@@ -778,6 +801,9 @@ defineExpose({
 .default-editor__color {
   width: 40px;
   height: 34px;
+}
+
+.default-editor__color .chips-input__inner {
   padding: 2px;
   border: 1px solid var(--chips-color-border, #e0e0e0);
   border-radius: var(--chips-radius-sm, 4px);
@@ -786,6 +812,10 @@ defineExpose({
 
 .default-editor__color-text {
   flex: 1;
+}
+
+.default-editor__color-text .chips-input__inner {
+  width: 100%;
 }
 
 /* 错误提示 */

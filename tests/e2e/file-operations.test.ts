@@ -5,6 +5,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { resourceServiceMock, resetResourceServiceMock } from '../helpers/resource-service-mock';
+
+vi.mock('@/services/resource-service', () => ({ resourceService: resourceServiceMock }));
 import { setActivePinia, createPinia } from 'pinia';
 import { createEventEmitter, EventEmitter } from '@/core/event-manager';
 import {
@@ -12,13 +15,16 @@ import {
   getFileService,
   resetFileService,
 } from '@/core/file-service';
+import { resetWorkspaceService } from '@/core/workspace-service';
 
 describe('E2E: 文件导入导出流程', () => {
   let fileService: FileService;
   let eventEmitter: EventEmitter;
 
   beforeEach(() => {
+    resetResourceServiceMock();
     setActivePinia(createPinia());
+    resetWorkspaceService();
     resetFileService();
     eventEmitter = createEventEmitter();
     fileService = getFileService(eventEmitter);

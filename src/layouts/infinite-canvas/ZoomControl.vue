@@ -11,6 +11,8 @@
  */
 
 import { ref, computed } from 'vue';
+import { Button, Select, Slider } from '@chips/components';
+import { t } from '@/services/i18n-service';
 
 interface Props {
   /** 当前缩放值 */
@@ -48,6 +50,18 @@ const zoomPercent = computed(() => Math.round(props.zoom * 100));
 /** 预设缩放值 */
 const zoomPresets = [25, 50, 75, 100, 125, 150, 200, 300];
 
+/** 下拉选项 */
+const zoomOptions = computed(() => {
+  const options = zoomPresets.map((preset) => ({
+    label: `${preset}%`,
+    value: preset,
+  }));
+  if (!zoomPresets.includes(zoomPercent.value)) {
+    options.push({ label: `${zoomPercent.value}%`, value: zoomPercent.value });
+  }
+  return options;
+});
+
 /** 是否可以放大 */
 const canZoomIn = computed(() => props.zoom < props.maxZoom);
 
@@ -57,19 +71,17 @@ const canZoomOut = computed(() => props.zoom > props.minZoom);
 /**
  * 处理滑块变化
  */
-function handleSliderChange(e: Event): void {
-  const target = e.target as HTMLInputElement;
-  const value = target.valueAsNumber;
-  emit('zoomTo', value / 100);
+function handleSliderChange(value: number | [number, number]): void {
+  const nextValue = Array.isArray(value) ? value[0] : value;
+  emit('zoomTo', nextValue / 100);
 }
 
 /**
  * 选择预设值
  */
-function handlePresetSelect(e: Event): void {
-  const target = e.target as HTMLSelectElement;
-  const value = Number(target.value);
-  emit('zoomTo', value / 100);
+function handlePresetSelect(value: number | string): void {
+  const nextValue = typeof value === 'number' ? value : Number(value);
+  emit('zoomTo', nextValue / 100);
 }
 
 /**
@@ -93,92 +105,88 @@ function handleMouseLeave(): void {
     @mouseleave="handleMouseLeave"
   >
     <!-- 基础控件：缩小按钮 -->
-    <button
+    <Button
       class="zoom-control__button"
       :disabled="!canZoomOut"
-      title="缩小 (Ctrl+-)"
+      :title="t('zoom_control.zoom_out')"
+      type="text"
+      html-type="button"
       @click="emit('zoomOut')"
     >
       −
-    </button>
+    </Button>
 
     <!-- 基础控件：缩放滑块 -->
     <div class="zoom-control__slider-container">
-      <input
-        type="range"
+      <Slider
         class="zoom-control__slider"
         :min="(minZoom ?? 0.1) * 100"
         :max="(maxZoom ?? 5) * 100"
-        :value="zoomPercent"
-        step="5"
-        @input="handleSliderChange"
+        :step="5"
+        :model-value="zoomPercent"
+        :show-tooltip="false"
+        @update:model-value="handleSliderChange"
       />
     </div>
 
     <!-- 基础控件：放大按钮 -->
-    <button
+    <Button
       class="zoom-control__button"
       :disabled="!canZoomIn"
-      title="放大 (Ctrl++)"
+      :title="t('zoom_control.zoom_in')"
+      type="text"
+      html-type="button"
       @click="emit('zoomIn')"
     >
       +
-    </button>
+    </Button>
 
     <!-- 更多按钮 -->
-    <button
+    <Button
       class="zoom-control__button zoom-control__more"
       :class="{ 'zoom-control__more--active': isExpanded }"
-      title="更多选项"
+      :title="t('zoom_control.more')"
+      type="text"
+      html-type="button"
       @click="toggleExpanded"
     >
       ⋯
-    </button>
+    </Button>
 
     <!-- 展开内容 -->
     <Transition name="expand">
       <div v-if="isExpanded" class="zoom-control__expanded">
         <!-- 缩放百分比选择 -->
         <div class="zoom-control__value">
-          <select
-            :value="zoomPercent"
+          <Select
             class="zoom-control__select"
-            @change="handlePresetSelect"
-          >
-            <option
-              v-for="preset in zoomPresets"
-              :key="preset"
-              :value="preset"
-            >
-              {{ preset }}%
-            </option>
-            <option
-              v-if="!zoomPresets.includes(zoomPercent)"
-              :value="zoomPercent"
-              selected
-            >
-              {{ zoomPercent }}%
-            </option>
-          </select>
+            :options="zoomOptions"
+            :model-value="zoomPercent"
+            @update:model-value="handlePresetSelect"
+          />
         </div>
 
         <!-- 重置按钮 -->
-        <button
+        <Button
           class="zoom-control__button zoom-control__button--text"
-          title="重置视图 (Ctrl+0)"
+          :title="t('zoom_control.reset')"
+          type="text"
+          html-type="button"
           @click="emit('reset')"
         >
-          重置
-        </button>
+          {{ t('zoom_control.reset_label') }}
+        </Button>
 
         <!-- 适应内容按钮 -->
-        <button
+        <Button
           class="zoom-control__button zoom-control__button--text"
-          title="适应内容"
+          :title="t('zoom_control.fit')"
+          type="text"
+          html-type="button"
           @click="emit('fit')"
         >
-          适应
-        </button>
+          {{ t('zoom_control.fit_label') }}
+        </Button>
       </div>
     </Transition>
   </div>
@@ -245,34 +253,58 @@ function handleMouseLeave(): void {
 }
 
 .zoom-control__slider-container {
-  width: 80px;
+  width: 100px;
+  min-width: 100px;
+  flex-shrink: 0;
 }
 
 .zoom-control__slider {
   width: 100%;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.zoom-control__slider :deep(.chips-slider__rail) {
+  position: relative;
+  width: 100%;
   height: 4px;
-  appearance: none;
   background: var(--chips-color-border, #e0e0e0);
   border-radius: 2px;
   cursor: pointer;
 }
 
-.zoom-control__slider::-webkit-slider-thumb {
-  appearance: none;
-  width: 10px;
-  height: 10px;
+.zoom-control__slider :deep(.chips-slider__track) {
+  position: absolute;
+  height: 100%;
   background: var(--chips-color-primary, #3b82f6);
-  border-radius: 50%;
-  cursor: pointer;
+  border-radius: 2px;
+  top: 0;
 }
 
-.zoom-control__slider::-moz-range-thumb {
-  width: 10px;
-  height: 10px;
+.zoom-control__slider :deep(.chips-slider__handle) {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
   background: var(--chips-color-primary, #3b82f6);
+  border: 2px solid var(--chips-color-surface, #ffffff);
   border-radius: 50%;
-  border: none;
-  cursor: pointer;
+  transform: translate(-50%, -50%);
+  cursor: grab;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.zoom-control__slider :deep(.chips-slider__handle:hover) {
+  transform: translate(-50%, -50%) scale(1.1);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+}
+
+.zoom-control__slider :deep(.chips-slider__handle--active) {
+  cursor: grabbing;
+  transform: translate(-50%, -50%) scale(1.15);
 }
 
 /* 展开区域 */
@@ -291,6 +323,9 @@ function handleMouseLeave(): void {
 
 .zoom-control__select {
   width: 100%;
+}
+
+.zoom-control__select .chips-select__selector {
   padding: 3px 6px;
   border: 1px solid var(--chips-color-border, #e0e0e0);
   border-radius: var(--chips-radius-sm, 4px);
@@ -300,8 +335,7 @@ function handleMouseLeave(): void {
   color: var(--chips-color-text-primary, #1a1a1a);
 }
 
-.zoom-control__select:focus {
-  outline: none;
+.zoom-control__select .chips-select__selector:focus-within {
   border-color: var(--chips-color-primary, #3b82f6);
 }
 

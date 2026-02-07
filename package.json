@@ -52,6 +52,7 @@
   },
   "devDependencies": {
     "@chips/foundation": "workspace:*",
+    "@chips/sdk": "workspace:*",
     "@chips/cardto-html-plugin": "workspace:*",
     "@types/node": "^20.11.24",
     "@typescript-eslint/eslint-plugin": "^7.1.0",

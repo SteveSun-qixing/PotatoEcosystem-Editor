@@ -6,7 +6,9 @@
  */
 
 import { ref, computed, onUnmounted } from 'vue';
+import { Button } from '@chips/components';
 import type { WindowConfig, WindowPosition, WindowSize } from '@/types';
+import { t } from '@/services/i18n-service';
 
 interface Props {
   /** 窗口配置 */
@@ -225,32 +227,35 @@ defineExpose({
 
       <div class="base-window__actions">
         <slot name="actions">
-          <button
+          <Button
             v-if="config.minimizable !== false"
             class="base-window__action base-window__action--minimize"
-            type="button"
-            aria-label="最小化"
+            html-type="button"
+            type="text"
+            :aria-label="t('window.minimize')"
             @click.stop="handleMinimize"
           >
             <span class="base-window__action-icon">−</span>
-          </button>
-          <button
+          </Button>
+          <Button
             class="base-window__action base-window__action--collapse"
-            type="button"
-            :aria-label="config.state === 'collapsed' ? '展开' : '收起'"
+            html-type="button"
+            type="text"
+            :aria-label="config.state === 'collapsed' ? t('window.expand') : t('window.collapse')"
             @click.stop="handleCollapse"
           >
             <span class="base-window__action-icon">{{ config.state === 'collapsed' ? '▽' : '△' }}</span>
-          </button>
-          <button
+          </Button>
+          <Button
             v-if="config.closable !== false"
             class="base-window__action base-window__action--close"
-            type="button"
-            aria-label="关闭"
+            html-type="button"
+            type="text"
+            :aria-label="t('window.close')"
             @click.stop="handleClose"
           >
             <span class="base-window__action-icon">×</span>
-          </button>
+          </Button>
         </slot>
       </div>
     </div>

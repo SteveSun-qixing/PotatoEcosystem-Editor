@@ -9,6 +9,7 @@ import { ref, computed, provide, onMounted, onUnmounted, watch } from 'vue';
 import SidePanel from './SidePanel.vue';
 import MainArea from './MainArea.vue';
 import { useEditorStore, useUIStore, useCardStore } from '@/core/state';
+import { t } from '@/services/i18n-service';
 
 /** 工作台布局配置 */
 export interface WorkbenchLayoutConfig {
@@ -272,7 +273,7 @@ defineExpose({
       :expanded="leftPanelExpanded"
       :min-width="180"
       :max-width="480"
-      title="文件"
+      :title="t('workbench.left_panel')"
       @update:width="handleLeftPanelWidthChange"
       @update:expanded="handleLeftPanelExpandedChange"
     >
@@ -286,7 +287,7 @@ defineExpose({
     <MainArea
       :active-tab-id="activeCardId"
       :show-tabs="true"
-      empty-text="选择一张卡片开始编辑"
+      :empty-text="t('workbench.empty')"
       empty-icon="📄"
       @tab-change="handleTabChange"
       @tab-close="handleTabClose"
@@ -310,7 +311,7 @@ defineExpose({
       :expanded="rightPanelExpanded"
       :min-width="200"
       :max-width="500"
-      title="属性"
+      :title="t('workbench.right_panel')"
       @update:width="handleRightPanelWidthChange"
       @update:expanded="handleRightPanelExpandedChange"
     >

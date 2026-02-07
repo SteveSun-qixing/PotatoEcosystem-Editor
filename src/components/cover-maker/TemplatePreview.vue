@@ -8,6 +8,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import type { TemplateStyle, TemplateConfig } from './types';
 import { generateCoverHtml, getTemplateById } from './templates';
+import { t } from '@/services/i18n-service';
 
 interface Props {
   /** 模板 ID */
@@ -79,7 +80,7 @@ function getPlaceholderHtml(): string {
   </style>
 </head>
 <body>
-  <span>请选择模板并填写标题</span>
+  <span>${t('cover_maker.preview_empty')}</span>
 </body>
 </html>`;
 }
@@ -121,9 +122,9 @@ onMounted(() => {
 <template>
   <div class="template-preview">
     <div class="template-preview__header">
-      <span class="template-preview__label">封面预览</span>
+      <span class="template-preview__label">{{ t('cover_maker.preview_label') }}</span>
       <span v-if="currentTemplate" class="template-preview__template-name">
-        {{ currentTemplate.name }}
+        {{ t(currentTemplate.name) }}
       </span>
     </div>
     
@@ -134,14 +135,14 @@ onMounted(() => {
       <iframe
         ref="iframeRef"
         class="template-preview__iframe"
-        sandbox="allow-same-origin allow-scripts"
-        title="封面预览"
+        sandbox="allow-same-origin"
+        :title="t('cover_maker.preview_label')"
       />
     </div>
     
     <div class="template-preview__info">
       <span class="template-preview__ratio">
-        比例: {{ aspectRatio.replace('/', ':') }}
+        {{ t('cover_maker.preview_ratio', { ratio: aspectRatio.replace('/', ':') }) }}
       </span>
     </div>
   </div>

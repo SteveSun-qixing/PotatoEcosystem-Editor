@@ -4,4 +4,7 @@
  * 提供跨环境的统一服务 API
  */
 
-export * from './conversion-service';
+export * from './resource-service';
+export * from './sdk-service';
+export * from './i18n-service';
+export * from './plugin-service';

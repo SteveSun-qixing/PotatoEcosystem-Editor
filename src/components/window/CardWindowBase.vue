@@ -10,7 +10,9 @@
  */
 
 import { ref, computed, onUnmounted, inject, type Ref } from 'vue';
+import { Button } from '@chips/components';
 import type { CardWindowConfig, WindowPosition, WindowSize } from '@/types';
+import { t } from '@/services/i18n-service';
 
 // 从 InfiniteCanvas 注入画布上下文（获取缩放比例）
 const canvasContext = inject<{
@@ -252,32 +254,35 @@ defineExpose({
 
       <div class="card-window-base__actions">
         <slot name="actions">
-          <button
+          <Button
             v-if="config.minimizable !== false"
             class="card-window-base__action card-window-base__action--minimize"
-            type="button"
-            aria-label="最小化"
+            html-type="button"
+            type="text"
+            :aria-label="t('window.minimize')"
             @click.stop="handleMinimize"
           >
             <span class="card-window-base__action-icon">−</span>
-          </button>
-          <button
+          </Button>
+          <Button
             class="card-window-base__action card-window-base__action--collapse"
-            type="button"
-            :aria-label="config.state === 'collapsed' ? '展开' : '收起'"
+            html-type="button"
+            type="text"
+            :aria-label="config.state === 'collapsed' ? t('window.expand') : t('window.collapse')"
             @click.stop="handleCollapse"
           >
             <span class="card-window-base__action-icon">{{ config.state === 'collapsed' ? '▽' : '△' }}</span>
-          </button>
-          <button
+          </Button>
+          <Button
             v-if="config.closable !== false"
             class="card-window-base__action card-window-base__action--close"
-            type="button"
-            aria-label="关闭"
+            html-type="button"
+            type="text"
+            :aria-label="t('window.close')"
             @click.stop="handleClose"
           >
             <span class="card-window-base__action-icon">×</span>
-          </button>
+          </Button>
         </slot>
       </div>
     </div>

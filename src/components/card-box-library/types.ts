@@ -3,12 +3,6 @@
  * @module components/card-box-library/types
  */
 
-/** 卡片类型分类 */
-export type CardCategory = 'text' | 'media' | 'interactive' | 'professional' | 'content' | 'info';
-
-/** 布局类型分类 */
-export type LayoutCategory = 'basic' | 'professional';
-
 /** 卡片类型定义 */
 export interface CardTypeDefinition {
   /** 类型ID */
@@ -19,8 +13,6 @@ export interface CardTypeDefinition {
   icon: string;
   /** 描述 */
   description: string;
-  /** 分类 */
-  category: CardCategory;
   /** 关键词（用于搜索） */
   keywords: string[];
 }
@@ -35,31 +27,49 @@ export interface LayoutTypeDefinition {
   icon: string;
   /** 描述 */
   description: string;
-  /** 分类 */
-  category: LayoutCategory;
   /** 关键词（用于搜索） */
   keywords: string[];
 }
 
-/** 分类定义 */
-export interface CategoryDefinition {
-  /** 分类ID */
-  id: string;
-  /** 显示名称 */
-  name: string;
-  /** 图标 */
-  icon: string;
-}
-
-/** 拖放数据 */
-export interface DragData {
+/** 卡片类型拖放数据 */
+export interface CardLibraryDragData {
   /** 拖放类型 */
-  type: 'card' | 'layout';
+  type: 'card';
   /** 类型ID */
   typeId: string;
   /** 名称 */
   name: string;
 }
+
+/** 布局类型拖放数据 */
+export interface LayoutLibraryDragData {
+  /** 拖放类型 */
+  type: 'layout';
+  /** 类型ID */
+  typeId: string;
+  /** 名称 */
+  name: string;
+}
+
+/** 卡箱库拖放数据 */
+export type LibraryDragData = CardLibraryDragData | LayoutLibraryDragData;
+
+/** 文件管理器拖放数据 */
+export interface WorkspaceFileDragData {
+  /** 拖放类型 */
+  type: 'workspace-file';
+  /** 文件 ID */
+  fileId: string;
+  /** 文件类型 */
+  fileType: 'card' | 'box';
+  /** 文件路径 */
+  filePath: string;
+  /** 名称 */
+  name: string;
+}
+
+/** 拖放数据 */
+export type DragData = LibraryDragData | WorkspaceFileDragData;
 
 /** 拖放状态 */
 export interface DragState {

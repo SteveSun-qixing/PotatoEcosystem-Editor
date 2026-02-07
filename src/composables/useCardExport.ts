@@ -9,6 +9,7 @@
 
 import { ref, type Ref } from 'vue';
 import type { ChipsSDK } from '@chips/sdk';
+import { t } from '@/services/i18n-service';
 
 /**
  * 导出状态
@@ -145,7 +146,7 @@ export function useCardExport(sdk: ChipsSDK): UseCardExportReturn {
     // 重置状态
     status.value = 'exporting';
     progress.value = 0;
-    message.value = '准备导出...';
+    message.value = t('export_panel.status_preparing');
     taskId.value = null;
 
     try {
@@ -157,7 +158,7 @@ export function useCardExport(sdk: ChipsSDK): UseCardExportReturn {
         ...options,
         onProgress: (progressInfo: any) => {
           progress.value = progressInfo.percent || 0;
-          message.value = progressInfo.currentStep || '处理中...';
+          message.value = progressInfo.currentStep || t('export_panel.status_processing');
           if (!taskId.value && progressInfo.taskId) {
             taskId.value = progressInfo.taskId;
           }
@@ -168,7 +169,9 @@ export function useCardExport(sdk: ChipsSDK): UseCardExportReturn {
       if (result.success) {
         status.value = 'success';
         progress.value = 100;
-        message.value = `导出成功！保存至: ${result.outputPath || '完成'}`;
+        message.value = t('export_panel.status_success', {
+          path: result.outputPath || t('export_panel.status_done'),
+        });
 
         // 5秒后自动重置状态
         setTimeout(() => {
@@ -184,7 +187,9 @@ export function useCardExport(sdk: ChipsSDK): UseCardExportReturn {
         };
       } else {
         status.value = 'error';
-        message.value = `导出失败: ${result.error?.message || '未知错误'}`;
+        message.value = t('export_panel.status_failed', {
+          error: result.error?.message || t('export_panel.status_unknown_error'),
+        });
 
         return {
           success: false,
@@ -194,8 +199,8 @@ export function useCardExport(sdk: ChipsSDK): UseCardExportReturn {
       }
     } catch (error) {
       status.value = 'error';
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      message.value = `导出失败: ${errorMessage}`;
+      const errorMessage = error instanceof Error ? error.message : t('export_panel.status_unknown_error');
+      message.value = t('export_panel.status_failed', { error: errorMessage });
 
       return {
         success: false,
@@ -221,7 +226,7 @@ export function useCardExport(sdk: ChipsSDK): UseCardExportReturn {
 
       if (cancelled) {
         status.value = 'cancelled';
-        message.value = '导出已取消';
+        message.value = t('export_panel.status_cancelled');
         progress.value = 0;
 
         return true;

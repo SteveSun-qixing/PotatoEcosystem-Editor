@@ -17,14 +17,17 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { exec } from 'child_process';
 
 // 导入 Foundation 模块（通过 pnpm workspace 链接）
-import { fileConverter, zipProcessor } from '@chips/foundation';
+import { fileConverter, zipProcessor, cardPacker } from '@chips/foundation';
 
 // 导入 CardtoHTMLPlugin（通过 pnpm workspace 链接）
-import { CardtoHTMLPlugin } from '@chips/cardto-html-plugin';
+import {
+  CardtoHTMLPlugin,
+  resolveConversionAppearance,
+} from '@chips/cardto-html-plugin';
 
 // 注册 HTML 转换插件
 const htmlPlugin = new CardtoHTMLPlugin();
@@ -67,10 +70,12 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://localhost:${PORT}`);
   
   try {
-    // 读取文件
+    // 读取文件（JSON 格式响应）
+    // 支持 ?binary=true 参数以 base64 格式返回二进制文件内容
     if (req.method === 'GET' && url.pathname.startsWith('/file/')) {
       const relativePath = decodeURIComponent(url.pathname.replace('/file/', ''));
       const fullPath = path.join(WORKSPACE_ROOT, relativePath);
+      const isBinaryMode = url.searchParams.get('binary') === 'true';
       
       if (!fullPath.startsWith(WORKSPACE_ROOT)) {
         res.writeHead(403);
@@ -84,6 +89,28 @@ const server = http.createServer(async (req, res) => {
           const files = fs.readdirSync(fullPath);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ type: 'directory', files }));
+        } else if (isBinaryMode) {
+          // 二进制模式：以 base64 编码返回文件内容
+          const buffer = fs.readFileSync(fullPath);
+          const ext = path.extname(fullPath).toLowerCase();
+          const mimeTypes: Record<string, string> = {
+            '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+            '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+            '.bmp': 'image/bmp', '.ico': 'image/x-icon',
+            '.mp4': 'video/mp4', '.webm': 'video/webm', '.ogg': 'video/ogg',
+            '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.flac': 'audio/flac',
+            '.pdf': 'application/pdf',
+            '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
+          };
+          const mimeType = mimeTypes[ext] || 'application/octet-stream';
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            type: 'file',
+            binary: true,
+            content: buffer.toString('base64'),
+            mimeType,
+            size: buffer.length,
+          }));
         } else {
           const content = fs.readFileSync(fullPath, 'utf-8');
           res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -273,6 +300,67 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // 打包卡片为 .card 文件
+    if (req.method === 'POST' && url.pathname === '/card/pack') {
+      let body = '';
+      req.on('data', (chunk) => (body += chunk));
+      req.on('end', async () => {
+        try {
+          const data = JSON.parse(body);
+          const { cardPath, outputPath, options = {} } = data;
+
+          if (!cardPath || !outputPath) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: 'Missing cardPath or outputPath' }));
+            return;
+          }
+
+          const fullCardPath = path.join(WORKSPACE_ROOT, cardPath);
+          const fullOutputPath = path.join(WORKSPACE_ROOT, outputPath);
+
+          if (!fullCardPath.startsWith(WORKSPACE_ROOT) || !fullOutputPath.startsWith(WORKSPACE_ROOT)) {
+            res.writeHead(403);
+            res.end(JSON.stringify({ error: 'Access denied' }));
+            return;
+          }
+
+          const outputDir = path.dirname(fullOutputPath);
+          if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+          }
+
+          const packResult = await cardPacker.pack(fullCardPath, fullOutputPath, {
+            compress: options.compress ?? false,
+            resourceMode: options.includeResources === false ? 'shell' : 'full',
+            validateStructure: options.validateStructure ?? true,
+            generateChecksum: options.generateChecksum ?? true,
+          });
+
+          if (!packResult.success) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: packResult.error?.message || 'Card pack failed' }));
+            return;
+          }
+
+          console.log(`[DEV-FS] Card packed: ${outputPath}`);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              success: true,
+              outputPath,
+              stats: packResult.stats,
+              warnings: packResult.warnings,
+            })
+          );
+        } catch (e) {
+          console.error(`[DEV-FS] Card pack error: ${e}`);
+          res.writeHead(500);
+          res.end(JSON.stringify({ error: String(e) }));
+        }
+      });
+      return;
+    }
+
     // 转换 HTML 到 PDF
     if (req.method === 'POST' && url.pathname === '/convert/pdf') {
       let body = '';
@@ -280,11 +368,11 @@ const server = http.createServer(async (req, res) => {
       req.on('end', async () => {
         try {
           const data = JSON.parse(body);
-          const { html, outputPath, options = {} } = data;
+          const { html, htmlPath, outputPath, options = {} } = data;
           
-          if (!html || !outputPath) {
+          if ((!html && !htmlPath) || !outputPath) {
             res.writeHead(400);
-            res.end(JSON.stringify({ error: 'Missing html or outputPath' }));
+            res.end(JSON.stringify({ error: 'Missing html/htmlPath or outputPath' }));
             return;
           }
           
@@ -295,16 +383,40 @@ const server = http.createServer(async (req, res) => {
             return;
           }
           
+          const appearance = resolveConversionAppearance({
+            profileId: options.appearanceProfileId,
+            overrides: options.appearanceOverrides,
+          });
+
           // 确保输出目录存在
           const outputDir = path.dirname(fullOutputPath);
           if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
           }
           
-          // 创建临时 HTML 文件
-          const tempHtmlPath = path.join(WORKSPACE_ROOT, `.temp-${Date.now()}.html`);
-          fs.writeFileSync(tempHtmlPath, html, 'utf-8');
-          console.log(`[DEV-FS] Created temp HTML: ${tempHtmlPath}`);
+          // 解析页面入口（优先使用 htmlPath，确保相对资源路径可用）
+          let pageUrl = '';
+          let tempHtmlPath: string | null = null;
+          if (typeof htmlPath === 'string' && htmlPath.length > 0) {
+            const fullHtmlPath = path.join(WORKSPACE_ROOT, htmlPath);
+            if (!fullHtmlPath.startsWith(WORKSPACE_ROOT)) {
+              res.writeHead(403);
+              res.end(JSON.stringify({ error: 'Access denied: htmlPath' }));
+              return;
+            }
+            if (!fs.existsSync(fullHtmlPath) || !fs.statSync(fullHtmlPath).isFile()) {
+              res.writeHead(404);
+              res.end(JSON.stringify({ error: `HTML file not found: ${htmlPath}` }));
+              return;
+            }
+            pageUrl = pathToFileURL(fullHtmlPath).href;
+            console.log(`[DEV-FS] 使用现有 HTML 文件转换 PDF: ${htmlPath}`);
+          } else {
+            tempHtmlPath = path.join(outputDir, `.temp-${Date.now()}.html`);
+            fs.writeFileSync(tempHtmlPath, html, 'utf-8');
+            pageUrl = pathToFileURL(tempHtmlPath).href;
+            console.log(`[DEV-FS] Created temp HTML: ${tempHtmlPath}`);
+          }
           
           try {
             // 使用 Puppeteer 转换（动态导入）
@@ -314,16 +426,34 @@ const server = http.createServer(async (req, res) => {
               args: ['--no-sandbox', '--disable-setuid-sandbox']
             });
             const page = await browser.newPage();
+            await page.setViewport({
+              width: appearance.pdf.viewportWidthPx,
+              height: appearance.pdf.viewportHeightPx,
+            });
             
             // 加载 HTML 文件
-            await page.goto(`file://${tempHtmlPath}`, { waitUntil: 'networkidle0' });
+            await page.goto(pageUrl, { waitUntil: 'networkidle0' });
+            // 等待图片加载完成，避免导出灰图
+            await page.evaluate(async () => {
+              const images = Array.from(document.images ?? []);
+              await Promise.all(
+                images.map((img) => {
+                  if (img.complete) return Promise.resolve();
+                  return new Promise<void>((resolve) => {
+                    img.addEventListener('load', () => resolve(), { once: true });
+                    img.addEventListener('error', () => resolve(), { once: true });
+                  });
+                })
+              );
+            });
             
             // 生成 PDF
             await page.pdf({
               path: fullOutputPath,
-              format: options.format || 'A4',
-              printBackground: options.printBackground !== false,
-              margin: options.margin || { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
+              format: String(options.format || appearance.pdf.pageFormat).toUpperCase(),
+              landscape: (options.orientation || appearance.pdf.orientation) === 'landscape',
+              printBackground: options.printBackground ?? appearance.pdf.printBackground,
+              margin: options.margin || appearance.pdf.margin,
             });
             
             await browser.close();
@@ -333,7 +463,7 @@ const server = http.createServer(async (req, res) => {
             res.end(JSON.stringify({ success: true, path: outputPath }));
           } finally {
             // 删除临时文件
-            if (fs.existsSync(tempHtmlPath)) {
+            if (tempHtmlPath && fs.existsSync(tempHtmlPath)) {
               fs.unlinkSync(tempHtmlPath);
               console.log(`[DEV-FS] Cleaned temp HTML: ${tempHtmlPath}`);
             }
@@ -354,11 +484,11 @@ const server = http.createServer(async (req, res) => {
       req.on('end', async () => {
         try {
           const data = JSON.parse(body);
-          const { html, outputPath, options = {} } = data;
+          const { html, htmlPath, outputPath, options = {} } = data;
           
-          if (!html || !outputPath) {
+          if ((!html && !htmlPath) || !outputPath) {
             res.writeHead(400);
-            res.end(JSON.stringify({ error: 'Missing html or outputPath' }));
+            res.end(JSON.stringify({ error: 'Missing html/htmlPath or outputPath' }));
             return;
           }
           
@@ -369,16 +499,40 @@ const server = http.createServer(async (req, res) => {
             return;
           }
           
+          const appearance = resolveConversionAppearance({
+            profileId: options.appearanceProfileId,
+            overrides: options.appearanceOverrides,
+          });
+
           // 确保输出目录存在
           const outputDir = path.dirname(fullOutputPath);
           if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
           }
           
-          // 创建临时 HTML 文件
-          const tempHtmlPath = path.join(WORKSPACE_ROOT, `.temp-${Date.now()}.html`);
-          fs.writeFileSync(tempHtmlPath, html, 'utf-8');
-          console.log(`[DEV-FS] Created temp HTML: ${tempHtmlPath}`);
+          // 解析页面入口（优先使用 htmlPath，确保相对资源路径可用）
+          let pageUrl = '';
+          let tempHtmlPath: string | null = null;
+          if (typeof htmlPath === 'string' && htmlPath.length > 0) {
+            const fullHtmlPath = path.join(WORKSPACE_ROOT, htmlPath);
+            if (!fullHtmlPath.startsWith(WORKSPACE_ROOT)) {
+              res.writeHead(403);
+              res.end(JSON.stringify({ error: 'Access denied: htmlPath' }));
+              return;
+            }
+            if (!fs.existsSync(fullHtmlPath) || !fs.statSync(fullHtmlPath).isFile()) {
+              res.writeHead(404);
+              res.end(JSON.stringify({ error: `HTML file not found: ${htmlPath}` }));
+              return;
+            }
+            pageUrl = pathToFileURL(fullHtmlPath).href;
+            console.log(`[DEV-FS] 使用现有 HTML 文件转换图片: ${htmlPath}`);
+          } else {
+            tempHtmlPath = path.join(outputDir, `.temp-${Date.now()}.html`);
+            fs.writeFileSync(tempHtmlPath, html, 'utf-8');
+            pageUrl = pathToFileURL(tempHtmlPath).href;
+            console.log(`[DEV-FS] Created temp HTML: ${tempHtmlPath}`);
+          }
           
           try {
             // 使用 Puppeteer 转换（动态导入）
@@ -391,13 +545,30 @@ const server = http.createServer(async (req, res) => {
             
             // 设置视口
             await page.setViewport({
-              width: options.width || 1200,
-              height: options.height || 800,
-              deviceScaleFactor: options.scale || 2,
+              width: options.width || appearance.image.viewportWidthPx,
+              height: options.height || appearance.image.viewportHeightPx,
+              deviceScaleFactor: options.scale || appearance.image.deviceScaleFactor,
             });
             
             // 加载 HTML 文件
-            await page.goto(`file://${tempHtmlPath}`, { waitUntil: 'networkidle0' });
+            await page.goto(pageUrl, { waitUntil: 'networkidle0' });
+            const waitTime = options.waitTime ?? appearance.image.waitTimeMs;
+            if (waitTime > 0) {
+              await new Promise((resolve) => setTimeout(resolve, waitTime));
+            }
+            // 等待图片加载完成，避免导出灰图
+            await page.evaluate(async () => {
+              const images = Array.from(document.images ?? []);
+              await Promise.all(
+                images.map((img) => {
+                  if (img.complete) return Promise.resolve();
+                  return new Promise<void>((resolve) => {
+                    img.addEventListener('load', () => resolve(), { once: true });
+                    img.addEventListener('error', () => resolve(), { once: true });
+                  });
+                })
+              );
+            });
             
             // 截图
             await page.screenshot({
@@ -413,7 +584,7 @@ const server = http.createServer(async (req, res) => {
             res.end(JSON.stringify({ success: true, path: outputPath }));
           } finally {
             // 删除临时文件
-            if (fs.existsSync(tempHtmlPath)) {
+            if (tempHtmlPath && fs.existsSync(tempHtmlPath)) {
               fs.unlinkSync(tempHtmlPath);
               console.log(`[DEV-FS] Cleaned temp HTML: ${tempHtmlPath}`);
             }
@@ -529,6 +700,8 @@ const server = http.createServer(async (req, res) => {
               outputPath: fullOutputPath,
               includeAssets: options.includeAssets !== false,
               themeId: options.themeId,
+              appearanceProfileId: options.appearanceProfileId,
+              appearanceOverrides: options.appearanceOverrides,
               onProgress: (progress) => {
                 console.log(`[DEV-FS] 转换进度: ${progress.percent}% - ${progress.currentStep || ''}`);
               },
@@ -630,7 +803,7 @@ server.listen(PORT, () => {
   console.log('  文件 API:');
   console.log('    GET  /status           - 服务器状态');
   console.log('    GET  /workspace        - 列出工作空间');
-  console.log('    GET  /file/{path}      - 读取文件');
+  console.log('    GET  /file/{path}      - 读取文件（JSON格式，支持 ?binary=true 参数）');
   console.log('    PUT  /file/{path}      - 写入文件');
   console.log('    POST /mkdir/{path}     - 创建目录');
   console.log('    DELETE /file/{path}    - 删除文件');
@@ -640,6 +813,7 @@ server.listen(PORT, () => {
   console.log('    POST /convert/html     - 卡片转 HTML (FileConverter -> CardtoHTMLPlugin)');
   console.log('    POST /convert/pdf      - HTML 转 PDF (Puppeteer)');
   console.log('    POST /convert/image    - HTML 转图片 (Puppeteer)');
+  console.log('    POST /card/pack        - 卡片打包为 .card (CardPacker)');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
 });

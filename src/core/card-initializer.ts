@@ -23,6 +23,9 @@
 
 import type { EventEmitter } from './event-manager';
 import { createEventEmitter } from './event-manager';
+import { resourceService } from '@/services/resource-service';
+import { createBaseCardContentDocument } from './base-card-content-loader';
+import { generateId62, isValidId62 } from '@/utils';
 
 // ========== 类型定义 ==========
 
@@ -47,11 +50,11 @@ export interface CardMetadataYaml {
   /** 修改时间（ISO 8601 格式） */
   modified_at: string;
   /** 主题 ID */
-  theme_id: string;
+  theme: string;
   /** 标签数组 */
   tags: string[][];
   /** 薯片规范版本 */
-  chips_standards_version: string;
+  chip_standards_version: string;
 }
 
 /** 结构文件中的基础卡片条目 */
@@ -132,13 +135,10 @@ export interface CardInitResult {
 // ========== 常量定义 ==========
 
 /** 默认主题 ID */
-const DEFAULT_THEME_ID = '薯片官方：默认主题';
+const DEFAULT_THEME_ID = 'default-light';
 
 /** 卡片规范版本 */
 const CHIPS_STANDARDS_VERSION = '1.0.0';
-
-/** 62 进制字符集 */
-const CHARS = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 // ========== 多语言键定义 ==========
 // 开发阶段使用人类可读的 key，打包时自动替换为系统编码
@@ -155,25 +155,12 @@ const I18N_KEYS = {
 // ========== 工具函数 ==========
 
 /**
- * 生成十位 62 进制 ID
- * @returns 10 位 62 进制字符串
- */
-function generateId(): string {
-  let id = '';
-  for (let i = 0; i < 10; i++) {
-    id += CHARS.charAt(Math.floor(Math.random() * CHARS.length));
-  }
-  return id;
-}
-
-/**
  * 验证 ID 格式是否正确
  * @param id - 要验证的 ID
  * @returns 是否为有效的 10 位 62 进制 ID
  */
 function isValidId(id: string): boolean {
-  if (typeof id !== 'string') return false;
-  return /^[0-9a-zA-Z]{10}$/.test(id);
+  return isValidId62(id);
 }
 
 /**
@@ -393,33 +380,6 @@ export interface CardInitializer {
  * );
  * ```
  */
-/**
- * 开发文件服务器地址
- * 运行 scripts/dev-file-server.ts 后可用
- */
-const DEV_FILE_SERVER = 'http://localhost:3456';
-
-/**
- * 检查开发文件服务器是否可用
- * 每次都重新检查，不缓存结果（因为服务器可能后启动）
- */
-async function checkDevFileServer(): Promise<boolean> {
-  try {
-    const response = await fetch(`${DEV_FILE_SERVER}/status`, { 
-      method: 'GET',
-      signal: AbortSignal.timeout(1000) 
-    });
-    const available = response.ok;
-    if (available) {
-      console.log('[CardInitializer] Dev file server is available');
-    }
-    return available;
-  } catch (e) {
-    console.log('[CardInitializer] Dev file server not available:', e);
-    return false;
-  }
-}
-
 export function createCardInitializer(
   options: CardInitOptions,
   events?: EventEmitter
@@ -429,46 +389,12 @@ export function createCardInitializer(
   const defaultThemeId = options.defaultThemeId || DEFAULT_THEME_ID;
 
   /**
-   * 将生态内路径转换为相对路径（用于开发文件服务器）
-   * 并进行 URL 安全编码（保留斜杠）
-   */
-  function toRelativePath(fullPath: string): string {
-    // 从 /ProductFinishedProductTestingSpace/TestWorkspace/xxx 提取 xxx
-    const workspacePrefix = '/ProductFinishedProductTestingSpace/TestWorkspace';
-    let relativePath = fullPath;
-    if (fullPath.startsWith(workspacePrefix)) {
-      relativePath = fullPath.slice(workspacePrefix.length + 1); // +1 去掉开头的 /
-    }
-    // 对每个路径段单独编码，保留斜杠
-    return relativePath.split('/').map(segment => encodeURIComponent(segment)).join('/');
-  }
-
-  /**
    * 通过 SDK 创建目录
    * @param path - 目录路径
    */
   async function createDirectory(path: string): Promise<void> {
     console.log(`[CardInitializer] Creating directory: ${path}`);
-    
-    // 开发阶段：尝试使用本地文件服务器
-    if (await checkDevFileServer()) {
-      try {
-        const relativePath = toRelativePath(path);
-        await fetch(`${DEV_FILE_SERVER}/mkdir/${relativePath}`, {
-          method: 'POST',
-        });
-        console.log(`[CardInitializer] Directory created via dev server: ${relativePath}`);
-      } catch (e) {
-        console.warn('[CardInitializer] Dev file server failed:', e);
-      }
-    }
-    
-    // 生产阶段 TODO: 通过 SDK 调用内核服务
-    // await sdk.request({
-    //   service: 'file',
-    //   method: 'createDirectory',
-    //   payload: { path }
-    // });
+    await resourceService.ensureDir(path);
   }
 
   /**
@@ -478,28 +404,7 @@ export function createCardInitializer(
    */
   async function writeFile(path: string, content: string): Promise<void> {
     console.log(`[CardInitializer] Writing file: ${path}`);
-    
-    // 开发阶段：尝试使用本地文件服务器
-    if (await checkDevFileServer()) {
-      try {
-        const relativePath = toRelativePath(path);
-        await fetch(`${DEV_FILE_SERVER}/file/${relativePath}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content }),
-        });
-        console.log(`[CardInitializer] File written via dev server: ${relativePath}`);
-      } catch (e) {
-        console.warn('[CardInitializer] Dev file server failed:', e);
-      }
-    }
-    
-    // 生产阶段 TODO: 通过 SDK 调用内核服务
-    // await sdk.request({
-    //   service: 'file',
-    //   method: 'write',
-    //   payload: { path, content }
-    // });
+    await resourceService.writeText(path, content);
   }
 
   /**
@@ -507,28 +412,7 @@ export function createCardInitializer(
    * @param path - 路径
    */
   async function exists(path: string): Promise<boolean> {
-    // 开发阶段：尝试使用本地文件服务器
-    if (await checkDevFileServer()) {
-      try {
-        const relativePath = toRelativePath(path);
-        const response = await fetch(`${DEV_FILE_SERVER}/file/${relativePath}`, {
-          method: 'GET',
-        });
-        return response.ok;
-      } catch {
-        return false;
-      }
-    }
-    
-    // 生产阶段 TODO: 通过 SDK 调用内核服务
-    // const response = await sdk.request({
-    //   service: 'file',
-    //   method: 'exists',
-    //   payload: { path }
-    // });
-    // return response.data;
-    
-    return false;
+    return resourceService.exists(path);
   }
 
   /**
@@ -560,9 +444,9 @@ export function createCardInitializer(
       name,
       created_at: timestamp,
       modified_at: timestamp,
-      theme_id: defaultThemeId,
+      theme: defaultThemeId,
       tags: [],
-      chips_standards_version: CHIPS_STANDARDS_VERSION,
+      chip_standards_version: CHIPS_STANDARDS_VERSION,
     };
   }
 
@@ -593,10 +477,7 @@ export function createCardInitializer(
    * 生成基础卡片配置文件内容
    */
   function generateBasicCardConfig(basicCard: BasicCardConfig): BasicCardYaml {
-    return {
-      type: basicCard.type,
-      data: basicCard.data || {},
-    };
+    return createBaseCardContentDocument(basicCard.type, basicCard.data);
   }
 
   /**
@@ -643,7 +524,11 @@ export function createCardInitializer(
       }
 
       // 2. 定义路径
-      const cardPath = `${workspaceRoot}/${cardId}`;
+      const normalizedCardId = cardId.endsWith('.card')
+        ? cardId.replace(/\.card$/i, '')
+        : cardId;
+      const cardFolderName = normalizedCardId;
+      const cardPath = `${workspaceRoot}/${cardFolderName}`;
       const cardConfigPath = `${cardPath}/.card`;
       const contentPath = `${cardPath}/content`;
       const cardcoverPath = `${cardPath}/cardcover`;
@@ -719,9 +604,12 @@ export function createCardInitializer(
         error: errorMessage,
       });
 
+      const fallbackFolderName = cardId.endsWith('.card')
+        ? cardId.replace(/\.card$/i, '')
+        : cardId;
       return {
         success: false,
-        cardPath: `${workspaceRoot}/${cardId}`,
+        cardPath: `${workspaceRoot}/${fallbackFolderName}`,
         createdFiles,
         error: t(I18N_KEYS.ERROR_CREATE_DIRECTORY_FAILED) + `: ${errorMessage}`,
         errorCode: 'SYS-9001',
@@ -733,14 +621,14 @@ export function createCardInitializer(
    * 生成新的卡片 ID
    */
   function generateCardId(): string {
-    return generateId();
+    return generateId62();
   }
 
   /**
    * 生成新的基础卡片 ID
    */
   function generateBasicCardId(): string {
-    return generateId();
+    return generateId62();
   }
 
   /**

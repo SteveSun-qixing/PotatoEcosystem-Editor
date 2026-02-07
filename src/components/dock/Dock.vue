@@ -24,8 +24,10 @@ const position = computed<DockPosition>(() => uiStore.dockPosition);
 /** 程序坞是否可见 */
 const visible = computed(() => uiStore.dockVisible);
 
-/** 获取所有工具窗口列表 */
-const allTools = computed<ToolWindowConfig[]>(() => uiStore.toolWindows);
+/** 获取所有工具窗口列表（始终显示所有工具窗口） */
+const allTools = computed<ToolWindowConfig[]>(() => {
+  return uiStore.toolWindows;
+});
 
 /**
  * 处理工具窗口点击

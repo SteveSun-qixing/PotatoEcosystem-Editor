@@ -293,8 +293,9 @@ export function useCanvasControls(options: CanvasControlsOptions = {}): CanvasCo
     const scaleY = (viewportHeight - padding * 2) / bounds.height;
     let newZoom = Math.min(scaleX, scaleY);
 
-    // 限制缩放范围：最小 25%，最大 maxZoom
-    newZoom = Math.max(0.25, Math.min(maxZoom, newZoom));
+    // 限制缩放范围：最小 25%，最大不超过 100%（或 maxZoom）
+    const maxFitZoom = Math.min(1, maxZoom);
+    newZoom = Math.max(0.25, Math.min(maxFitZoom, newZoom));
 
     zoom.value = newZoom;
 

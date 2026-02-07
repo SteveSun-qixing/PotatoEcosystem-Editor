@@ -3,10 +3,13 @@
  * @module utils
  */
 
+import { generateId62 } from './id';
+
 // 导出性能优化工具
 export * from './performance';
 export * from './virtual-list';
 export * from './lazy-load';
+export * from './id';
 
 /**
  * 生成唯一ID
@@ -14,7 +17,7 @@ export * from './lazy-load';
  * @returns 唯一ID字符串
  */
 export function generateId(prefix = 'id'): string {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  return `${prefix}_${generateId62()}`;
 }
 
 /**
@@ -116,6 +119,75 @@ export function mergeObjects<T extends Record<string, unknown>>(
   source: Partial<T>
 ): T {
   return { ...target, ...source };
+}
+
+/**
+ * 类名值类型
+ */
+export type ClassValue =
+  | string
+  | number
+  | boolean
+  | undefined
+  | null
+  | ClassValue[]
+  | { [key: string]: boolean | undefined | null };
+
+function toClassName(value: ClassValue): string {
+  if (!value) return '';
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(toClassName).filter(Boolean).join(' ');
+  }
+
+  if (typeof value === 'object') {
+    return Object.entries(value)
+      .filter(([, v]) => Boolean(v))
+      .map(([k]) => k)
+      .join(' ');
+  }
+
+  return '';
+}
+
+/**
+ * 组合多个类名
+ */
+export function classNames(...args: ClassValue[]): string {
+  return args.map(toClassName).filter(Boolean).join(' ');
+}
+
+/**
+ * 创建带前缀的类名生成器
+ */
+export function createBEM(block: string, prefix = 'chips') {
+  const blockClass = `${prefix}-${block}`;
+
+  return function bem(element?: string, modifier?: string): string {
+    let result = blockClass;
+
+    if (element) {
+      result += `__${element}`;
+    }
+
+    if (modifier) {
+      result += `--${modifier}`;
+    }
+
+    return result;
+  };
+}
+
+/**
+ * 将像素值转换为数字
+ */
+export function pxToNumber(value: string | number): number {
+  if (typeof value === 'number') return value;
+  return parseInt(value.replace('px', ''), 10) || 0;
 }
 
 /**

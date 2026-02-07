@@ -4,7 +4,7 @@
  * @description 实现撤销/重做系统的命令模式管理器
  */
 
-import { generateId } from '@/utils';
+import { generateScopedId } from '@/utils';
 
 /**
  * 命令历史记录
@@ -198,7 +198,7 @@ export class CommandManager {
       if (!merged) {
         // 创建历史记录
         const history: CommandHistory = {
-          id: generateId('cmd'),
+          id: generateScopedId('cmd'),
           description: command.description,
           timestamp: Date.now(),
           undoable: true,

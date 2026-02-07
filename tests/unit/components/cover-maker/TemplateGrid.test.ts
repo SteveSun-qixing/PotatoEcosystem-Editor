@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mount, VueWrapper } from '@vue/test-utils';
 import TemplateGrid from '@/components/cover-maker/TemplateGrid.vue';
 import { templates } from '@/components/cover-maker/templates';
+import { t } from '@/services/i18n-service';
 import type { TemplateStyle } from '@/components/cover-maker/types';
 
 describe('TemplateGrid 模板网格组件', () => {
@@ -80,7 +81,7 @@ describe('TemplateGrid 模板网格组件', () => {
       const names = wrapper.findAll('.template-grid__name');
       expect(names).toHaveLength(8);
 
-      const expectedNames = templates.map((t) => t.name);
+      const expectedNames = templates.map((template) => t(template.name));
       names.forEach((name, index) => {
         expect(name.text()).toBe(expectedNames[index]);
       });
@@ -96,7 +97,7 @@ describe('TemplateGrid 模板网格组件', () => {
       const descriptions = wrapper.findAll('.template-grid__description');
       expect(descriptions).toHaveLength(8);
 
-      const expectedDescriptions = templates.map((t) => t.description);
+      const expectedDescriptions = templates.map((template) => t(template.description));
       descriptions.forEach((desc, index) => {
         expect(desc.text()).toBe(expectedDescriptions[index]);
       });

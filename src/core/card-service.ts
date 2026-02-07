@@ -12,6 +12,7 @@
 import { ref, computed, reactive, type Ref, type ComputedRef } from 'vue';
 import type { EventEmitter } from './event-manager';
 import { createEventEmitter } from './event-manager';
+import { generateId62 } from '@/utils';
 
 /** 基础卡片数据 */
 export interface BasicCardData {
@@ -113,13 +114,6 @@ export interface CardService {
 }
 
 /**
- * 生成唯一 ID
- */
-function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
-
-/**
  * 获取当前时间的 ISO 字符串
  */
 function now(): string {
@@ -154,7 +148,7 @@ export function createCardService(events?: EventEmitter): CardService {
     name: string,
     initialBasicCard?: { type: string; data?: Record<string, unknown> }
   ): Promise<CompositeCard> {
-    const id = generateId();
+    const id = generateId62();
     const timestamp = now();
 
     const basicCards: BasicCardData[] = [];
@@ -162,7 +156,7 @@ export function createCardService(events?: EventEmitter): CardService {
     // 如果有初始基础卡片，添加它
     if (initialBasicCard) {
       basicCards.push({
-        id: generateId(),
+        id: generateId62(),
         type: initialBasicCard.type,
         data: initialBasicCard.data || {},
         createdAt: timestamp,
@@ -310,7 +304,7 @@ export function createCardService(events?: EventEmitter): CardService {
 
     const timestamp = now();
     const basicCard: BasicCardData = {
-      id: generateId(),
+      id: generateId62(),
       type,
       data: data || {},
       createdAt: timestamp,

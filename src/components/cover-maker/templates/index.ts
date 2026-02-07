@@ -5,6 +5,7 @@
  */
 
 import type { CoverTemplate, TemplateConfig, TemplateStyle } from '../types';
+import { t } from '@/services/i18n-service';
 
 /**
  * 转义 HTML 特殊字符
@@ -28,8 +29,8 @@ function formatDate(date?: string): string {
  */
 const minimalWhiteTemplate: CoverTemplate = {
   id: 'minimal-white',
-  name: '简约白底',
-  description: '白色背景，黑色文字居中显示，干净简洁',
+  name: 'cover_template.minimal_white_name',
+  description: 'cover_template.minimal_white_desc',
   previewStyle: 'background: #ffffff; color: #1a1a1a;',
   generateHtml: (config: TemplateConfig) => `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -81,8 +82,8 @@ const minimalWhiteTemplate: CoverTemplate = {
  */
 const gradientBlueTemplate: CoverTemplate = {
   id: 'gradient-blue',
-  name: '渐变蓝',
-  description: '蓝色渐变背景，白色文字，现代感强',
+  name: 'cover_template.gradient_blue_name',
+  description: 'cover_template.gradient_blue_desc',
   previewStyle: 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff;',
   generateHtml: (config: TemplateConfig) => `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -135,8 +136,8 @@ const gradientBlueTemplate: CoverTemplate = {
  */
 const darkThemeTemplate: CoverTemplate = {
   id: 'dark-theme',
-  name: '深色背景',
-  description: '深色背景，亮色文字，适合正式场合',
+  name: 'cover_template.dark_name',
+  description: 'cover_template.dark_desc',
   previewStyle: 'background: #1a1a2e; color: #eaeaea;',
   generateHtml: (config: TemplateConfig) => `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -188,8 +189,8 @@ const darkThemeTemplate: CoverTemplate = {
  */
 const geometricTemplate: CoverTemplate = {
   id: 'geometric',
-  name: '几何图形',
-  description: '带有几何装饰的现代设计风格',
+  name: 'cover_template.geometric_name',
+  description: 'cover_template.geometric_desc',
   previewStyle: 'background: #f8f9fa; color: #2d3436;',
   generateHtml: (config: TemplateConfig) => `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -280,8 +281,8 @@ const geometricTemplate: CoverTemplate = {
  */
 const borderedTemplate: CoverTemplate = {
   id: 'bordered',
-  name: '纯色边框',
-  description: '带有装饰边框的经典设计',
+  name: 'cover_template.border_name',
+  description: 'cover_template.border_desc',
   previewStyle: 'background: #ffffff; color: #2c3e50; border: 3px solid #3498db;',
   generateHtml: (config: TemplateConfig) => `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -346,8 +347,8 @@ const borderedTemplate: CoverTemplate = {
  */
 const magazineTemplate: CoverTemplate = {
   id: 'magazine',
-  name: '杂志风格',
-  description: '左对齐排版，类似杂志封面设计',
+  name: 'cover_template.magazine_name',
+  description: 'cover_template.magazine_desc',
   previewStyle: 'background: #fafafa; color: #222222;',
   generateHtml: (config: TemplateConfig) => `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -408,8 +409,8 @@ const magazineTemplate: CoverTemplate = {
  */
 const newsBannerTemplate: CoverTemplate = {
   id: 'news-banner',
-  name: '新闻风格',
-  description: '底部带有标题横条的新闻风格设计',
+  name: 'cover_template.news_name',
+  description: 'cover_template.news_desc',
   previewStyle: 'background: linear-gradient(to bottom, #e0e0e0 70%, #c0392b 70%); color: #ffffff;',
   generateHtml: (config: TemplateConfig) => `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -473,8 +474,8 @@ const newsBannerTemplate: CoverTemplate = {
  */
 const circleSoftTemplate: CoverTemplate = {
   id: 'circle-soft',
-  name: '圆形背景',
-  description: '柔和的圆形装饰背景，温馨风格',
+  name: 'cover_template.circle_name',
+  description: 'cover_template.circle_desc',
   previewStyle: 'background: #fff5f5; color: #c44569;',
   generateHtml: (config: TemplateConfig) => `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -569,7 +570,13 @@ export const templates: CoverTemplate[] = [
  * 根据 ID 获取模板
  */
 export function getTemplateById(id: TemplateStyle): CoverTemplate | undefined {
-  return templates.find(t => t.id === id);
+  const template = templates.find((item) => item.id === id);
+  if (!template) return undefined;
+  return {
+    ...template,
+    name: t(template.name),
+    description: t(template.description),
+  };
 }
 
 /**
