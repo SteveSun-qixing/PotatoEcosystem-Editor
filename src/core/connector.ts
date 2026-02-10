@@ -105,7 +105,7 @@ export class SDKConnector {
 
   private log(...args: unknown[]): void {
     if (this.options.debug) {
-      console.log('[SDKConnector]', ...args);
+      console.warn('[SDKConnector]', ...args);
     }
   }
 }

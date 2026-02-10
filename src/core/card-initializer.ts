@@ -264,10 +264,14 @@ function toYaml(obj: unknown, indent = 0): string {
           return `${spaces}- {}`;
         }
         const firstEntry = entries[0];
-        const firstValue = typeof firstEntry[1] === 'object' && firstEntry[1] !== null
-          ? `\n${toYaml(firstEntry[1], indent + 2)}`
-          : ` ${toYaml(firstEntry[1], 0)}`;
-        const firstLine = `${spaces}- ${firstEntry[0]}:${firstValue}`;
+        if (!firstEntry) {
+          return `${spaces}- {}`;
+        }
+        const [firstKey, firstEntryValue] = firstEntry;
+        const firstValue = typeof firstEntryValue === 'object' && firstEntryValue !== null
+          ? `\n${toYaml(firstEntryValue, indent + 2)}`
+          : ` ${toYaml(firstEntryValue, 0)}`;
+        const firstLine = `${spaces}- ${firstKey}:${firstValue}`;
         
         const restLines = entries.slice(1).map(([key, value]) => {
           if (typeof value === 'object' && value !== null) {
@@ -393,7 +397,7 @@ export function createCardInitializer(
    * @param path - 目录路径
    */
   async function createDirectory(path: string): Promise<void> {
-    console.log(`[CardInitializer] Creating directory: ${path}`);
+    console.warn(`[CardInitializer] Creating directory: ${path}`);
     await resourceService.ensureDir(path);
   }
 
@@ -403,7 +407,7 @@ export function createCardInitializer(
    * @param content - 文件内容
    */
   async function writeFile(path: string, content: string): Promise<void> {
-    console.log(`[CardInitializer] Writing file: ${path}`);
+    console.warn(`[CardInitializer] Writing file: ${path}`);
     await resourceService.writeText(path, content);
   }
 
@@ -585,7 +589,7 @@ export function createCardInitializer(
         hasInitialBasicCard: !!initialBasicCard,
       });
 
-      console.log(
+      console.warn(
         `[CardInitializer] ${t(I18N_KEYS.SUCCESS_CARD_CREATED)}:`,
         { cardId, name: name.trim(), createdFiles }
       );

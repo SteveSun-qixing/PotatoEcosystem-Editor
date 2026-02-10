@@ -268,10 +268,12 @@ export class PerformanceMonitor {
   recordMetric(label: string, value: number): void {
     if (!this.enabled) return;
 
-    if (!this.metrics.has(label)) {
-      this.metrics.set(label, []);
+    const metricValues = this.metrics.get(label);
+    if (metricValues) {
+      metricValues.push(value);
+      return;
     }
-    this.metrics.get(label)!.push(value);
+    this.metrics.set(label, [value]);
   }
 
   /**
@@ -322,10 +324,10 @@ export class PerformanceMonitor {
    * 打印报告
    */
   printReport(): void {
-    console.group('Performance Report');
+    console.warn('Performance Report');
     for (const [label, stats] of this.getAllStats()) {
       if (stats) {
-        console.log(`${label}:`, {
+        console.warn(`${label}:`, {
           count: stats.count,
           min: `${stats.min.toFixed(2)}ms`,
           max: `${stats.max.toFixed(2)}ms`,
@@ -333,7 +335,6 @@ export class PerformanceMonitor {
         });
       }
     }
-    console.groupEnd();
   }
 }
 
@@ -400,11 +401,10 @@ export class LeakDetector {
    * 打印报告
    */
   printReport(): void {
-    console.group('Leak Detection Report');
+    console.warn('Leak Detection Report');
     for (const [type, count] of this.objectCounts) {
-      console.log(`${type}: ${count} instances`);
+      console.warn(`${type}: ${count} instances`);
     }
-    console.groupEnd();
   }
 }
 
@@ -432,8 +432,9 @@ export class ObjectPool<T> {
    * 获取对象
    */
   acquire(): T {
-    if (this.pool.length > 0) {
-      return this.pool.pop()!;
+    const reused = this.pool.pop();
+    if (reused !== undefined) {
+      return reused;
     }
     return this.factory();
   }

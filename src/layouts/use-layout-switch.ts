@@ -4,8 +4,8 @@
  * @description 提供布局切换功能，支持在无限画布和工作台布局之间平滑切换
  */
 
-import { ref, computed, watch, nextTick } from 'vue';
-import { useEditorStore, useUIStore, useCardStore } from '@/core/state';
+import { ref, computed, nextTick, type ComputedRef, type Ref } from 'vue';
+import { useEditorStore, useUIStore } from '@/core/state';
 import type { LayoutType, WindowConfig } from '@/types';
 
 /**
@@ -29,13 +29,13 @@ export interface LayoutSwitchOptions {
  */
 export interface LayoutSwitchReturn {
   /** 当前布局类型 */
-  currentLayout: ReturnType<typeof computed<LayoutType>>;
+  currentLayout: ComputedRef<LayoutType>;
   /** 是否正在切换 */
-  isSwitching: ReturnType<typeof ref<boolean>>;
+  isSwitching: Ref<boolean>;
   /** 是否为无限画布布局 */
-  isInfiniteCanvas: ReturnType<typeof computed<boolean>>;
+  isInfiniteCanvas: ComputedRef<boolean>;
   /** 是否为工作台布局 */
-  isWorkbench: ReturnType<typeof computed<boolean>>;
+  isWorkbench: ComputedRef<boolean>;
   /** 切换到指定布局 */
   switchTo: (layout: LayoutType) => Promise<void>;
   /** 切换到无限画布 */
@@ -45,7 +45,7 @@ export interface LayoutSwitchReturn {
   /** 切换布局（在两种布局之间切换） */
   toggleLayout: () => Promise<void>;
   /** 保存的窗口状态 */
-  savedWindowState: ReturnType<typeof ref<WindowConfig[]>>;
+  savedWindowState: Ref<WindowConfig[]>;
 }
 
 /** 默认选项 */
@@ -74,7 +74,7 @@ const DEFAULT_OPTIONS: Required<LayoutSwitchOptions> = {
  *   enableTransition: true,
  *   preserveCardState: true,
  *   onAfterSwitch: (from, to) => {
- *     console.log(`Switched from ${from} to ${to}`);
+ *     console.warn(`Switched from ${from} to ${to}`);
  *   }
  * });
  * ```
@@ -85,7 +85,6 @@ export function useLayoutSwitch(
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const editorStore = useEditorStore();
   const uiStore = useUIStore();
-  const cardStore = useCardStore();
 
   /** 是否正在切换 */
   const isSwitching = ref(false);

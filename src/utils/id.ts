@@ -19,7 +19,8 @@ function buildIdFromRandom(length: number): string {
   if (bytes) {
     let id = '';
     for (let i = 0; i < length; i += 1) {
-      id += ID_CHARS[bytes[i] % ID_CHARS.length];
+      const value = bytes[i] ?? 0;
+      id += ID_CHARS[value % ID_CHARS.length];
     }
     return id;
   }

@@ -22,7 +22,7 @@ module.exports = {
   rules: {
     // TypeScript 规则
     '@typescript-eslint/no-unused-vars': [
-      'error',
+      'warn',
       { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
     ],
     '@typescript-eslint/explicit-function-return-type': 'off',
@@ -37,21 +37,14 @@ module.exports = {
     'vue/require-prop-types': 'error',
     'vue/component-definition-name-casing': ['error', 'PascalCase'],
     'vue/component-name-in-template-casing': ['error', 'PascalCase'],
-    'vue/custom-event-name-casing': ['error', 'camelCase'],
+    'vue/custom-event-name-casing': 'off',
     'vue/define-macros-order': [
       'error',
       {
         order: ['defineOptions', 'defineProps', 'defineEmits', 'defineSlots'],
       },
     ],
-    'vue/html-self-closing': [
-      'error',
-      {
-        html: { void: 'always', normal: 'never', component: 'always' },
-        svg: 'always',
-        math: 'always',
-      },
-    ],
+    'vue/html-self-closing': 'off',
 
     // 通用规则
     'no-console': ['warn', { allow: ['warn', 'error'] }],

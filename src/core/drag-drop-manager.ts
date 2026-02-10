@@ -239,7 +239,7 @@ export function detectFileTypes(files: FileList | File[]): FileDropType[] {
  *   type: 'canvas',
  *   id: 'main-canvas',
  *   onDrop: (source, position) => {
- *     console.log('Dropped at', position);
+ *     console.warn('Dropped at', position);
  *   },
  * });
  *
@@ -273,7 +273,7 @@ export class DragDropManager {
 
   /** 只读状态 */
   get state(): Readonly<Ref<DragDropState>> {
-    return readonly(this._state);
+    return readonly(this._state) as Readonly<Ref<DragDropState>>;
   }
 
   // ==================== 注册/注销 ====================
@@ -417,7 +417,8 @@ export class DragDropManager {
     }
 
     this._state.value.hoverTarget = target;
-    this._state.value.canDrop = this.checkCanDrop(this._state.value.source!, target);
+    const source = this._state.value.source;
+    this._state.value.canDrop = source ? this.checkCanDrop(source, target) : false;
   }
 
   /**
@@ -764,7 +765,7 @@ export function useFileDrop(): UseFileDropReturn {
 
   return {
     isFileDragOver: readonly(isFileDragOver),
-    draggedFiles: readonly(draggedFiles),
+    draggedFiles: readonly(draggedFiles) as Readonly<Ref<FileDragData | null>>,
     handleDragEnter,
     handleDragOver,
     handleDragLeave,

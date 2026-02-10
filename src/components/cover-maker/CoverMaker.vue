@@ -195,7 +195,7 @@ async function handleSave(): Promise<void> {
   let coverData: CoverData;
   
   switch (currentMode.value) {
-    case 'image':
+    case 'image': {
       if (!selectedImage.value) return;
       const imageBuffer = await selectedImage.value.arrayBuffer();
       coverData = {
@@ -207,6 +207,7 @@ async function handleSave(): Promise<void> {
         },
       };
       break;
+    }
       
     case 'html':
       coverData = {
@@ -215,7 +216,7 @@ async function handleSave(): Promise<void> {
       };
       break;
       
-    case 'zip':
+    case 'zip': {
       if (!selectedZip.value) return;
       const zipBuffer = await selectedZip.value.arrayBuffer();
       coverData = {
@@ -226,6 +227,7 @@ async function handleSave(): Promise<void> {
         },
       };
       break;
+    }
       
     case 'template':
       if (!selectedTemplate.value) return;

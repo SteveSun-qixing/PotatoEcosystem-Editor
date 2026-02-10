@@ -28,6 +28,8 @@ const emit = defineEmits<{
     worldPosition: { x: number; y: number },
     target?: CardWindowDropTarget
   ];
+  /** 打开引擎设置 */
+  'open-settings': [];
 }>();
 
 const uiStore = useUIStore();
@@ -433,7 +435,7 @@ function clearDragVisualState(): void {
     </DesktopLayer>
 
     <!-- 窗口层（不受缩放影响） -->
-    <WindowLayer>
+    <WindowLayer @open-settings="emit('open-settings')">
       <slot name="window"></slot>
 
       <!-- 工具窗口动态插槽转发 -->

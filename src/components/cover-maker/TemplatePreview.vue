@@ -5,7 +5,7 @@
  * @description 实时预览生成的封面效果
  */
 
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import type { TemplateStyle, TemplateConfig } from './types';
 import { generateCoverHtml, getTemplateById } from './templates';
 import { t } from '@/services/i18n-service';

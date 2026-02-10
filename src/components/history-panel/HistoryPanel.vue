@@ -47,7 +47,7 @@ const editorStore = useEditorStore();
 const undoHistory = ref<CommandHistory[]>([]);
 const redoHistory = ref<CommandHistory[]>([]);
 const isLoading = ref(false);
-const currentIndex = ref(-1);
+const currentIndex = computed(() => (undoHistory.value.length > 0 ? undoHistory.value.length - 1 : -1));
 
 // 计算属性
 const canUndo = computed(() => commandManager.canUndo());
@@ -66,10 +66,6 @@ const displayHistory = computed(() => {
     type: 'undo' as const,
     index: i,
   }));
-  
-  // 当前位置标记
-  const current = undo.length > 0 ? undo.length - 1 : -1;
-  currentIndex.value = current;
   
   return [...redo.reverse(), ...undo].slice(0, props.maxItems);
 });
@@ -250,7 +246,7 @@ watch(() => props.maxItems, () => {
     <!-- 历史列表 -->
     <div v-if="displayHistory.length > 0" class="history-list">
       <div
-        v-for="(item, index) in displayHistory"
+        v-for="item in displayHistory"
         :key="item.id"
         class="history-item"
         :class="{

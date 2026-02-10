@@ -10,6 +10,7 @@ export const zhCN = {
     tool_file_manager: '文件管理器',
     tool_edit_panel: '编辑面板',
     tool_card_box_library: '卡箱库',
+    tool_engine_settings: '引擎设置',
   },
   common: {
     card: '卡片',
@@ -82,6 +83,10 @@ export const zhCN = {
     open: '打开',
     rename: '重命名',
     reveal_in_finder: '在资源管理器中显示',
+  },
+  file: {
+    tree_label: '文件树',
+    empty_folder: '当前文件夹为空',
   },
   window: {
     minimize: '最小化',
@@ -313,8 +318,106 @@ export const zhCN = {
     circle_name: '圆形背景',
     circle_desc: '圆形装饰',
   },
+  engine_settings: {
+    // 通用
+    title: '引擎设置',
+    close: '关闭',
+    apply: '应用',
+    cancel: '取消',
+    reset: '重置当前分类',
+    reset_confirm: '确定要重置此分类的所有设置吗？',
+    reset_all: '全部重置',
+    reset_all_confirm: '确定要重置所有引擎设置为默认值吗？',
+    no_settings: '暂无可用设置',
+
+    // 分类名称
+    category_language: '语言与文字',
+    category_theme: '主题',
+    category_layout: '引擎模式',
+    category_tools: '工具管理',
+    category_file_mode: '文件管理',
+    category_about: '关于',
+
+    // 语言与文字面板
+    language_title: '语言与文字设置',
+    language_description: '调整编辑引擎的显示语言、字号和内容比例',
+    language_locale: '界面语言',
+    language_locale_desc: '切换编辑引擎的界面显示语言',
+    language_locale_zh_cn: '简体中文',
+    language_locale_en_us: 'English',
+    language_font_size: '基础字号',
+    language_font_size_desc: '调整编辑引擎界面的基础文字大小',
+    language_font_size_unit: 'px',
+    language_content_scale: '内容比例',
+    language_content_scale_desc: '调整卡片内容区域的缩放比例',
+
+    // 主题面板
+    theme_title: '主题设置',
+    theme_description: '管理编辑引擎的外观主题包。每个主题包是独立的视觉方案，日间和夜间是不同的主题包。',
+    theme_current: '当前主题',
+    theme_select: '选择主题',
+    theme_follow_system: '跟随系统主题',
+    theme_follow_system_desc: '自动跟随操作系统偏好，在亮色和暗色主题包之间切换',
+    theme_preview: '主题预览',
+    theme_light: '亮色',
+    theme_dark: '暗色',
+    theme_default_light: '默认亮色',
+    theme_default_dark: '默认暗色',
+    theme_loading: '正在加载主题...',
+    theme_applied: '主题已应用',
+    theme_reset: '主题已重置为默认',
+    theme_install: '安装主题包',
+    theme_install_desc: '从本地文件或应用市场安装新的主题包',
+    theme_manage: '管理已安装主题',
+
+    // 引擎模式面板
+    layout_title: '引擎模式',
+    layout_description: '切换编辑引擎的工作模式',
+    layout_current: '当前模式',
+    layout_infinite_canvas: '无限画布',
+    layout_infinite_canvas_desc: '自由布局的无限桌面，支持无限扩展、缩放、平移',
+    layout_workbench: '工作台',
+    layout_workbench_desc: '分区窗口组合，适合专注编辑（即将推出）',
+    layout_coming_soon: '更多模式即将推出',
+
+    // 工具管理面板
+    tools_title: '工具管理',
+    tools_description: '管理编辑引擎中已安装的工具和插件',
+    tools_installed: '已安装工具',
+    tools_enabled: '已启用',
+    tools_disabled: '已禁用',
+    tools_enable: '启用',
+    tools_disable: '禁用',
+    tools_install: '安装新工具',
+    tools_install_desc: '从本地文件或应用市场安装新的工具',
+    tools_no_tools: '暂无已安装工具',
+    tools_version: '版本',
+    tools_author: '作者',
+
+    // 文件管理方式面板
+    file_mode_title: '文件管理方式',
+    file_mode_description: '选择卡片文件的资源管理方式',
+    file_mode_current: '当前模式',
+    file_mode_link: '链接模式',
+    file_mode_link_desc: '卡片引用本地文件路径，文件保留在原始位置。节省空间，但移动文件后可能断开链接。',
+    file_mode_copy: '复制模式',
+    file_mode_copy_desc: '将文件复制到卡片目录中。卡片独立完整，便于分享和迁移，但占用更多空间。',
+
+    // 关于面板
+    about_title: '关于',
+    about_app_name: '薯片卡片编辑引擎',
+    about_version: '版本',
+    about_protocol_version: '薯片协议版本',
+    about_license: '开源协议',
+    about_tech_stack: '技术栈',
+    about_homepage: '项目主页',
+    about_copyright: '版权信息',
+  },
   drag_preview: {
     hint: '释放以创建{type}',
+  },
+  drag_drop: {
+    drop_files: '释放以导入文件',
   },
   nestable_card: {
     hint: '释放以嵌套卡片',
@@ -410,6 +513,7 @@ export const enUS = {
     tool_file_manager: 'File Manager',
     tool_edit_panel: 'Edit Panel',
     tool_card_box_library: 'Card & Box Library',
+    tool_engine_settings: 'Engine Settings',
   },
   common: {
     card: 'Card',
@@ -482,6 +586,10 @@ export const enUS = {
     open: 'Open',
     rename: 'Rename',
     reveal_in_finder: 'Reveal in file manager',
+  },
+  file: {
+    tree_label: 'File tree',
+    empty_folder: 'This folder is empty',
   },
   window: {
     minimize: 'Minimize',
@@ -713,8 +821,106 @@ export const enUS = {
     circle_name: 'Circle',
     circle_desc: 'Rounded accents',
   },
+  engine_settings: {
+    // General
+    title: 'Engine Settings',
+    close: 'Close',
+    apply: 'Apply',
+    cancel: 'Cancel',
+    reset: 'Reset Category',
+    reset_confirm: 'Reset all settings in this category?',
+    reset_all: 'Reset All',
+    reset_all_confirm: 'Reset all engine settings to defaults?',
+    no_settings: 'No settings available',
+
+    // Category names
+    category_language: 'Language & Text',
+    category_theme: 'Theme',
+    category_layout: 'Engine Mode',
+    category_tools: 'Tool Management',
+    category_file_mode: 'File Management',
+    category_about: 'About',
+
+    // Language & Text panel
+    language_title: 'Language & Text Settings',
+    language_description: 'Adjust the display language, font size, and content scale of the editor engine',
+    language_locale: 'Interface Language',
+    language_locale_desc: 'Switch the display language of the editor engine',
+    language_locale_zh_cn: 'Simplified Chinese',
+    language_locale_en_us: 'English',
+    language_font_size: 'Base Font Size',
+    language_font_size_desc: 'Adjust the base text size of the editor engine interface',
+    language_font_size_unit: 'px',
+    language_content_scale: 'Content Scale',
+    language_content_scale_desc: 'Adjust the zoom scale of card content areas',
+
+    // Theme panel
+    theme_title: 'Theme Settings',
+    theme_description: 'Manage the appearance theme packages of the editor engine. Each theme package is an independent visual scheme; light and dark are separate packages.',
+    theme_current: 'Current theme',
+    theme_select: 'Select theme',
+    theme_follow_system: 'Follow system theme',
+    theme_follow_system_desc: 'Automatically switch between light and dark theme packages based on system preference',
+    theme_preview: 'Theme preview',
+    theme_light: 'Light',
+    theme_dark: 'Dark',
+    theme_default_light: 'Default Light',
+    theme_default_dark: 'Default Dark',
+    theme_loading: 'Loading themes...',
+    theme_applied: 'Theme applied',
+    theme_reset: 'Theme reset to default',
+    theme_install: 'Install Theme Package',
+    theme_install_desc: 'Install new theme packages from local files or the app marketplace',
+    theme_manage: 'Manage Installed Themes',
+
+    // Engine mode panel
+    layout_title: 'Engine Mode',
+    layout_description: 'Switch the working mode of the editor engine',
+    layout_current: 'Current Mode',
+    layout_infinite_canvas: 'Infinite Canvas',
+    layout_infinite_canvas_desc: 'Freely arranged infinite desktop with zoom, pan, and unlimited expansion',
+    layout_workbench: 'Workbench',
+    layout_workbench_desc: 'Partitioned window layout for focused editing (coming soon)',
+    layout_coming_soon: 'More modes coming soon',
+
+    // Tool management panel
+    tools_title: 'Tool Management',
+    tools_description: 'Manage installed tools and plugins in the editor engine',
+    tools_installed: 'Installed Tools',
+    tools_enabled: 'Enabled',
+    tools_disabled: 'Disabled',
+    tools_enable: 'Enable',
+    tools_disable: 'Disable',
+    tools_install: 'Install New Tool',
+    tools_install_desc: 'Install new tools from local files or the app marketplace',
+    tools_no_tools: 'No installed tools',
+    tools_version: 'Version',
+    tools_author: 'Author',
+
+    // File management panel
+    file_mode_title: 'File Management Mode',
+    file_mode_description: 'Choose the resource management mode for card files',
+    file_mode_current: 'Current Mode',
+    file_mode_link: 'Link Mode',
+    file_mode_link_desc: 'Cards reference local file paths. Files stay in their original location. Saves space but links may break if files are moved.',
+    file_mode_copy: 'Copy Mode',
+    file_mode_copy_desc: 'Files are copied into the card directory. Cards are self-contained for easy sharing and migration, but use more space.',
+
+    // About panel
+    about_title: 'About',
+    about_app_name: 'Chips Card Editor Engine',
+    about_version: 'Version',
+    about_protocol_version: 'Chips Protocol Version',
+    about_license: 'License',
+    about_tech_stack: 'Tech Stack',
+    about_homepage: 'Project Homepage',
+    about_copyright: 'Copyright',
+  },
   drag_preview: {
     hint: 'Release to create {type}',
+  },
+  drag_drop: {
+    drop_files: 'Release to import files',
   },
   nestable_card: {
     hint: 'Release to nest card',

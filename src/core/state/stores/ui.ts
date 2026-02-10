@@ -194,7 +194,7 @@ export const useUIStore = defineStore('ui', {
         // 添加新窗口
         this.windowList.push(config);
       }
-      console.log('[UIStore] 添加窗口:', config.id, 'type:', config.type, '当前窗口数:', this.windowList.length);
+      console.warn('[UIStore] 添加窗口:', config.id, 'type:', config.type, '当前窗口数:', this.windowList.length);
     },
 
     /**

@@ -18,3 +18,6 @@ export type {
 
 export { useUIStore } from './ui';
 export type { UIStoreState, UIStore, DockPosition } from './ui';
+
+export { useSettingsStore } from './settings';
+export type { SettingsStoreState, SettingsStore } from './settings';

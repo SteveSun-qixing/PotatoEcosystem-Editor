@@ -13,8 +13,14 @@
 import { computed } from 'vue';
 import { useUIStore } from '@/core/state';
 import DockItem from './DockItem.vue';
+import { t } from '@/services/i18n-service';
 import type { DockPosition } from '@/core/state/stores/ui';
 import type { ToolWindowConfig } from '@/types';
+
+const emit = defineEmits<{
+  /** 打开引擎设置弹窗 */
+  'open-settings': [];
+}>();
 
 const uiStore = useUIStore();
 
@@ -51,13 +57,21 @@ function isMinimized(toolId: string): boolean {
   const tool = uiStore.getWindow(toolId);
   return tool?.state === 'minimized';
 }
+
+/**
+ * 打开引擎设置
+ */
+function handleOpenSettings(): void {
+  emit('open-settings');
+}
 </script>
 
 <template>
   <div
-    v-if="visible && allTools.length > 0"
+    v-if="visible"
     :class="['dock', `dock--${position}`]"
   >
+    <!-- 工具窗口图标 -->
     <DockItem
       v-for="tool in allTools"
       :key="tool.id"
@@ -66,6 +80,21 @@ function isMinimized(toolId: string): boolean {
       :title="tool.title"
       :minimized="isMinimized(tool.id)"
       @restore="handleToolClick"
+    />
+
+    <!-- 分隔线 -->
+    <div
+      v-if="allTools.length > 0"
+      class="dock__divider"
+    />
+
+    <!-- 引擎设置按钮 -->
+    <DockItem
+      tool-id="__engine-settings__"
+      icon="⚙️"
+      :title="t('engine_settings.title')"
+      :minimized="false"
+      @restore="handleOpenSettings"
     />
   </div>
 </template>
@@ -106,6 +135,21 @@ function isMinimized(toolId: string): boolean {
   top: 50%;
   transform: translateY(-50%);
   flex-direction: column;
+}
+
+/* 分隔线 */
+.dock__divider {
+  width: 1px;
+  height: 32px;
+  background: var(--chips-color-border, #e0e0e0);
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.dock--left .dock__divider,
+.dock--right .dock__divider {
+  width: 32px;
+  height: 1px;
 }
 
 /* 深色主题适配 */

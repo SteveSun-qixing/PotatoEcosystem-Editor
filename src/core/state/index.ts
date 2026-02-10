@@ -8,6 +8,7 @@ export {
   useEditorStore,
   useCardStore,
   useUIStore,
+  useSettingsStore,
 } from './stores';
 
 // 类型导出
@@ -23,4 +24,6 @@ export type {
   UIStoreState,
   UIStore,
   DockPosition,
+  SettingsStoreState,
+  SettingsStore,
 } from './stores';

@@ -12,6 +12,11 @@ import { useUIStore } from '@/core/state';
 import { useWindowManager } from '@/core/window-manager';
 import type { ToolWindowConfig } from '@/types';
 
+const emit = defineEmits<{
+  /** 转发 Dock 的打开设置事件 */
+  'open-settings': [];
+}>();
+
 const uiStore = useUIStore();
 const windowManager = useWindowManager();
 
@@ -65,7 +70,7 @@ function handleToolWindowFocus(windowId: string): void {
     <slot></slot>
 
     <!-- 程序坞组件 -->
-    <Dock />
+    <Dock @open-settings="emit('open-settings')" />
   </div>
 </template>
 

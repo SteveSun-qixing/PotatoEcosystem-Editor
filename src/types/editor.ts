@@ -4,6 +4,7 @@
  */
 
 import type { ChipsSDK } from '@chips/sdk';
+export type { ChipsSDK } from '@chips/sdk';
 
 /** 编辑器配置 */
 export interface EditorConfig {

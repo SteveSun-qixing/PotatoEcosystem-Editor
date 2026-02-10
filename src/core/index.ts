@@ -60,7 +60,7 @@ export {
 export type {
   FileType,
   FileInfo,
-  CreateCardOptions,
+  CreateCardOptions as CreateFileCardOptions,
   CreateBoxOptions,
   CreateFolderOptions,
   FileOperationResult,

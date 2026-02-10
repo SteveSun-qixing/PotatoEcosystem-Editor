@@ -330,7 +330,10 @@ export class BatchWindowCommand implements Command {
   async undo(): Promise<void> {
     // 逆序撤销
     for (let i = this.commands.length - 1; i >= 0; i--) {
-      await this.commands[i]!.undo();
+      const command = this.commands[i];
+      if (command) {
+        await command.undo();
+      }
     }
   }
 

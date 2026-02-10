@@ -87,8 +87,11 @@ export class RemoveBaseCardCommand implements Command {
       // 保存被移除的卡片信息和位置，用于撤销
       const index = card.structure.findIndex((bc) => bc.id === this.baseCardId);
       if (index !== -1) {
-        this.removedCard = deepClone(card.structure[index]!);
-        this.originalPosition = index;
+        const removed = card.structure[index];
+        if (removed) {
+          this.removedCard = deepClone(removed);
+          this.originalPosition = index;
+        }
       }
     }
     
@@ -321,7 +324,10 @@ export class BatchCardCommand implements Command {
   async undo(): Promise<void> {
     // 逆序撤销
     for (let i = this.commands.length - 1; i >= 0; i--) {
-      await this.commands[i]!.undo();
+      const command = this.commands[i];
+      if (command) {
+        await command.undo();
+      }
     }
   }
 

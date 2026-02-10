@@ -66,8 +66,14 @@ export interface ExportResult {
   stats?: {
     duration?: number;
     fileSize?: number;
-    [key: string]: any;
+    [key: string]: unknown;
   };
+}
+
+interface ExportProgressInfo {
+  percent?: number;
+  currentStep?: string;
+  taskId?: string;
 }
 
 /**
@@ -123,7 +129,7 @@ export interface UseCardExportReturn {
  * });
  * 
  * if (result.success) {
- *   console.log('导出成功', result.outputPath);
+ *   console.warn('导出成功', result.outputPath);
  * }
  * </script>
  * ```
@@ -150,13 +156,11 @@ export function useCardExport(sdk: ChipsSDK): UseCardExportReturn {
     taskId.value = null;
 
     try {
-      let result: any;
-
       // 通过 SDK 的 CardAPI.export() 方法执行导出
       // SDK 内部会通过 CoreConnector 路由到 Foundation
-      result = await sdk.card.export(cardId, format, {
+      const result = await sdk.card.export(cardId, format, {
         ...options,
-        onProgress: (progressInfo: any) => {
+        onProgress: (progressInfo: ExportProgressInfo) => {
           progress.value = progressInfo.percent || 0;
           message.value = progressInfo.currentStep || t('export_panel.status_processing');
           if (!taskId.value && progressInfo.taskId) {

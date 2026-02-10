@@ -13,7 +13,7 @@ import { ref, computed, watch, onMounted, onUnmounted, shallowRef, nextTick, mar
 import { Button } from '@chips/components';
 import { useCardStore, useEditorStore } from '@/core/state';
 import DefaultEditor from './DefaultEditor.vue';
-import type { EditorPlugin, PluginHostProps } from './types';
+import type { EditorPlugin } from './types';
 import { getEditorComponent } from '@/services/plugin-service';
 import { t } from '@/services/i18n-service';
 import { getEditorConnector } from '@/services/sdk-service';
@@ -261,7 +261,7 @@ async function loadPlugin(): Promise<void> {
       
       // 标记为已加载
       loadedTypes.add(props.cardType);
-      console.log('[PluginHost] 加载编辑器组件:', props.cardType);
+      console.warn('[PluginHost] 加载编辑器组件:', props.cardType);
     } else {
       // 没有找到插件，使用默认编辑器
       currentPlugin.value = null;
@@ -313,15 +313,6 @@ const currentEditorComponent = shallowRef<Component | null>(null);
 const usePluginComponent = computed(() => {
   return currentEditorComponent.value !== null;
 });
-
-/**
- * 处理插件配置变更
- */
-function handlePluginConfigChange(newConfig: Record<string, unknown>): void {
-  localConfig.value = { ...newConfig };
-  hasUnsavedChanges.value = true;
-  debouncedEmitChange();
-}
 
 /**
  * 处理默认编辑器配置变更
@@ -417,7 +408,7 @@ async function handleImageCardConfigChange(newConfig: Record<string, unknown>): 
               },
             });
             if (response.success) {
-              console.log(`[PluginHost] Resource saved via chips://: ${chipsUri}`);
+              console.warn(`[PluginHost] Resource saved via chips://: ${chipsUri}`);
             } else {
               console.error(`[PluginHost] Failed to save resource: ${chipsUri}`, response.error);
             }
@@ -471,8 +462,12 @@ function updateStoreConfig(): void {
   
   // 创建新的 structure 数组
   const newStructure = [...activeCard.structure];
+  const currentBaseCard = newStructure[baseCardIndex];
+  if (!currentBaseCard) {
+    return;
+  }
   newStructure[baseCardIndex] = {
-    ...newStructure[baseCardIndex],
+    ...currentBaseCard,
     config: { ...localConfig.value },
   };
   

@@ -5,10 +5,10 @@
  * @description 固定在窗口层右侧，显示选中基础卡片的编辑组件
  */
 
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import { useCardStore, useEditorStore } from '@/core/state';
+import { ref, computed, watch } from 'vue';
+import { useCardStore } from '@/core/state';
 import PluginHost from './PluginHost.vue';
-import type { EditPanelProps, EditPanelPosition } from './types';
+import type { EditPanelPosition } from './types';
 import { t } from '@/services/i18n-service';
 
 // ==================== Props ====================
@@ -37,7 +37,6 @@ const emit = defineEmits<{
 
 // ==================== Stores ====================
 const cardStore = useCardStore();
-const editorStore = useEditorStore();
 
 // ==================== State ====================
 /** 面板是否展开 */
@@ -57,11 +56,6 @@ const selectedBaseCard = computed(() => {
     return null;
   }
   return activeCard.structure.find(bc => bc.id === cardStore.selectedBaseCardId) ?? null;
-});
-
-/** 面板是否应该显示 - 总是显示（空状态或编辑组件） */
-const shouldShow = computed(() => {
-  return true;
 });
 
 /** 面板样式 */
@@ -86,6 +80,7 @@ const panelClass = computed(() => ({
 const emptyText = computed(() => {
   return t('edit_panel.empty_hint');
 });
+const selectedBaseCardId = computed(() => selectedBaseCard.value?.id ?? '');
 
 // ==================== Methods ====================
 /**
@@ -127,20 +122,6 @@ function handleConfigChange(config: Record<string, unknown>): void {
   emit('config-changed', cardStore.selectedBaseCardId, config);
 }
 
-/**
- * 处理过渡开始
- */
-function handleTransitionStart(): void {
-  isTransitioning.value = true;
-}
-
-/**
- * 处理过渡结束
- */
-function handleTransitionEnd(): void {
-  isTransitioning.value = false;
-}
-
 // ==================== Watchers ====================
 // 监听选中状态变化
 watch(selectedBaseCard, (newVal, oldVal) => {
@@ -153,15 +134,6 @@ watch(selectedBaseCard, (newVal, oldVal) => {
 // 监听宽度属性变化
 watch(() => props.width, (newWidth) => {
   panelWidth.value = newWidth;
-});
-
-// ==================== Lifecycle ====================
-onMounted(() => {
-  // 初始化完成
-});
-
-onUnmounted(() => {
-  // 清理
 });
 
 // ==================== Expose ====================
@@ -180,6 +152,24 @@ defineExpose({
     role="complementary"
     :aria-label="t('edit_panel.title')"
   >
+    <div class="edit-panel__header">
+      <div class="edit-panel__heading">
+        <h3 class="edit-panel__title">{{ t('edit_panel.title') }}</h3>
+        <p class="edit-panel__subtitle">
+          {{ selectedBaseCardId }}
+        </p>
+      </div>
+      <button
+        class="edit-panel__action edit-panel__action--toggle"
+        type="button"
+        :aria-label="isExpanded ? t('common.collapse') : t('common.expand')"
+        :aria-expanded="isExpanded"
+        @click="toggleExpand"
+      >
+        {{ isExpanded ? '⟨' : '⟩' }}
+      </button>
+    </div>
+
     <!-- 面板内容 - 直接显示插件编辑器 -->
     <div v-show="isExpanded" class="edit-panel__content">
       <!-- 有选中卡片时显示编辑组件 -->
@@ -220,6 +210,54 @@ defineExpose({
   height: 100%;
   background: var(--chips-color-surface, #ffffff);
   overflow: hidden;
+}
+
+.edit-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--chips-spacing-sm, 8px) var(--chips-spacing-md, 12px);
+  border-bottom: 1px solid var(--chips-color-border, #e5e7eb);
+}
+
+.edit-panel__heading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.edit-panel__title {
+  margin: 0;
+  font-size: var(--chips-font-size-sm, 14px);
+  font-weight: var(--chips-font-weight-medium, 500);
+  color: var(--chips-color-text, #111827);
+}
+
+.edit-panel__subtitle {
+  margin: 0;
+  min-height: 18px;
+  font-size: 12px;
+  color: var(--chips-color-text-secondary, #6b7280);
+}
+
+.edit-panel__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--chips-radius-sm, 4px);
+  color: var(--chips-color-text-secondary, #6b7280);
+}
+
+.edit-panel__action:hover {
+  background: color-mix(
+    in srgb,
+    var(--chips-color-primary, #3b82f6) 8%,
+    transparent
+  );
+  color: var(--chips-color-text, #111827);
 }
 
 .edit-panel--transitioning {

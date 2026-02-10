@@ -29,12 +29,30 @@ export interface LocalCoreConnectorOptions {
 
 type EventHandler = (data: unknown) => void;
 
+interface ResourceServiceMock {
+  readText(path: string): Promise<string>;
+  writeText(path: string, content: string): Promise<void>;
+  ensureDir(path: string): Promise<void>;
+  exists(path: string): Promise<boolean>;
+  delete(path: string): Promise<void>;
+  list(path: string): Promise<string[]>;
+  metadata(path: string): Promise<unknown>;
+  getCardFiles(path: string): Promise<Array<{ path: string; content: string }>>;
+  copy(sourcePath: string, destPath: string): Promise<void>;
+  move(sourcePath: string, destPath: string): Promise<void>;
+}
+
 const DEFAULT_ROOT = '/ProductFinishedProductTestingSpace';
 const DEFAULT_BASE_URL = 'http://localhost:3456';
+const CONFIG_STORAGE_KEY = 'chips.editor.local-config';
 
-function getResourceServiceMock(): any | null {
-  const globalAny = globalThis as any;
-  return globalAny?.__RESOURCE_SERVICE_MOCK__ ?? null;
+function getResourceServiceMock(): ResourceServiceMock | null {
+  const maybeMock = (
+    globalThis as typeof globalThis & {
+      __RESOURCE_SERVICE_MOCK__?: ResourceServiceMock;
+    }
+  ).__RESOURCE_SERVICE_MOCK__;
+  return maybeMock ?? null;
 }
 
 function textToArrayBuffer(text: string): ArrayBuffer {
@@ -90,13 +108,14 @@ const MIME_TO_RESOURCE_TYPE: Record<string, string> = {
 };
 
 export class LocalCoreConnector extends CoreConnector {
-  private _connected = false;
+  private _localConnected = false;
   private _baseUrl: string;
   private _rootPath: string;
   private _workspaceRoot: string;
   private _externalRoot: string;
-  private _clientId: string;
-  private _eventHandlers = new Map<string, Set<EventHandler>>();
+  private _localClientId: string;
+  private _localEventHandlers = new Map<string, Set<EventHandler>>();
+  private _configStore = new Map<string, unknown>();
 
   constructor(options: LocalCoreConnectorOptions = {}) {
     super({ url: 'ws://local-bridge' });
@@ -104,19 +123,20 @@ export class LocalCoreConnector extends CoreConnector {
     this._rootPath = options.rootPath ?? DEFAULT_ROOT;
     this._workspaceRoot = options.workspaceRoot ?? `${this._rootPath}/TestWorkspace`;
     this._externalRoot = options.externalRoot ?? `${this._rootPath}/ExternalEnvironment`;
-    this._clientId = generateScopedId('local');
+    this._localClientId = generateScopedId('local');
+    this.loadConfigStore();
   }
 
   async connect(): Promise<void> {
-    this._connected = true;
+    this._localConnected = true;
   }
 
   disconnect(): void {
-    this._connected = false;
+    this._localConnected = false;
   }
 
   get isConnected(): boolean {
-    return this._connected;
+    return this._localConnected;
   }
 
   get isConnecting(): boolean {
@@ -124,7 +144,7 @@ export class LocalCoreConnector extends CoreConnector {
   }
 
   get clientId(): string {
-    return this._clientId;
+    return this._localClientId;
   }
 
   get pendingCount(): number {
@@ -132,24 +152,26 @@ export class LocalCoreConnector extends CoreConnector {
   }
 
   publish(eventType: string, data: Record<string, unknown>): void {
-    const handlers = this._eventHandlers.get(eventType);
+    const handlers = this._localEventHandlers.get(eventType);
     if (!handlers) return;
     handlers.forEach((handler) => handler(data));
   }
 
   on(eventType: string, handler: EventHandler): void {
-    if (!this._eventHandlers.has(eventType)) {
-      this._eventHandlers.set(eventType, new Set());
+    const handlers = this._localEventHandlers.get(eventType);
+    if (handlers) {
+      handlers.add(handler);
+      return;
     }
-    this._eventHandlers.get(eventType)!.add(handler);
+    this._localEventHandlers.set(eventType, new Set([handler]));
   }
 
   off(eventType: string, handler?: EventHandler): void {
     if (!handler) {
-      this._eventHandlers.delete(eventType);
+      this._localEventHandlers.delete(eventType);
       return;
     }
-    this._eventHandlers.get(eventType)?.delete(handler);
+    this._localEventHandlers.get(eventType)?.delete(handler);
   }
 
   once(eventType: string, handler: EventHandler): void {
@@ -161,7 +183,7 @@ export class LocalCoreConnector extends CoreConnector {
   }
 
   async request<T = unknown>(params: RequestParams): Promise<ResponseData<T>> {
-    if (!this._connected) {
+    if (!this._localConnected) {
       throw new ConnectionError('LocalCoreConnector not connected');
     }
 
@@ -190,6 +212,8 @@ export class LocalCoreConnector extends CoreConnector {
         return (await this.handleConversion(params.payload)) as ResponseData<T>;
       case 'card.pack':
         return (await this.handleCardPack(params.payload)) as ResponseData<T>;
+      case 'config':
+        return this.handleConfig(params.method, params.payload) as ResponseData<T>;
       default:
         return {
           success: false,
@@ -198,8 +222,82 @@ export class LocalCoreConnector extends CoreConnector {
     }
   }
 
+  private loadConfigStore(): void {
+    if (typeof localStorage === 'undefined') {
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      for (const [key, value] of Object.entries(parsed)) {
+        this._configStore.set(key, value);
+      }
+    } catch {
+      this._configStore.clear();
+    }
+  }
+
+  private persistConfigStore(): void {
+    if (typeof localStorage === 'undefined') {
+      return;
+    }
+    try {
+      const data = Object.fromEntries(this._configStore.entries());
+      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(data));
+    } catch {
+      // 忽略本地持久化失败，保持内存数据可用
+    }
+  }
+
+  private handleConfig(method: string, payload: Record<string, unknown>): ResponseData {
+    const key = typeof payload.key === 'string' ? payload.key : '';
+
+    switch (method) {
+      case 'get': {
+        if (!key) {
+          return { success: false, error: 'Missing config key' };
+        }
+        const value = this._configStore.has(key)
+          ? this._configStore.get(key)
+          : payload.default;
+        return { success: true, data: value };
+      }
+      case 'set': {
+        if (!key) {
+          return { success: false, error: 'Missing config key' };
+        }
+        this._configStore.set(key, payload.value);
+        this.persistConfigStore();
+        return { success: true };
+      }
+      case 'delete': {
+        if (!key) {
+          return { success: false, error: 'Missing config key' };
+        }
+        this._configStore.delete(key);
+        this.persistConfigStore();
+        return { success: true };
+      }
+      case 'list': {
+        const prefix = typeof payload.prefix === 'string' ? payload.prefix : '';
+        const entries: Array<{ key: string; value: unknown }> = [];
+        for (const [entryKey, value] of this._configStore.entries()) {
+          if (!prefix || entryKey.startsWith(prefix)) {
+            entries.push({ key: entryKey, value });
+          }
+        }
+        return { success: true, data: { entries } };
+      }
+      default:
+        return { success: false, error: `Unsupported config method: ${method}` };
+    }
+  }
+
   private async handleResourceMock(
-    mock: any,
+    mock: ResourceServiceMock,
     method: string,
     payload?: Record<string, unknown>
   ): Promise<ResponseData<unknown>> {
@@ -259,7 +357,7 @@ export class LocalCoreConnector extends CoreConnector {
   }
 
   private async handleFileMock(
-    mock: any,
+    mock: ResourceServiceMock,
     method: string,
     payload?: Record<string, unknown>
   ): Promise<ResponseData<unknown>> {
@@ -517,14 +615,14 @@ export class LocalCoreConnector extends CoreConnector {
     // 对路径中的每段分别编码，保留 / 作为路径分隔符
     const encodedPath = relativePath.split('/').map(seg => encodeURIComponent(seg)).join('/');
     const url = `${this._baseUrl}/file/${encodedPath}?binary=true`;
-    console.log('[LocalCoreConnector] readDevFileBinary URL:', url);
+    console.warn('[LocalCoreConnector] readDevFileBinary URL:', url);
     const response = await fetch(url);
     if (!response.ok) {
       console.warn('[LocalCoreConnector] readDevFileBinary failed:', response.status, response.statusText, 'for', url);
       return null;
     }
     const data = await response.json();
-    console.log('[LocalCoreConnector] readDevFileBinary response keys:', Object.keys(data), 'binary:', data.binary, 'mimeType:', data.mimeType);
+    console.warn('[LocalCoreConnector] readDevFileBinary response keys:', Object.keys(data), 'binary:', data.binary, 'mimeType:', data.mimeType);
     if (data.type !== 'file' || !data.binary) {
       console.warn('[LocalCoreConnector] readDevFileBinary: unexpected response format', { type: data.type, binary: data.binary });
       return null;
@@ -550,14 +648,14 @@ export class LocalCoreConnector extends CoreConnector {
     const options = (payload.options ?? {}) as Record<string, unknown>;
     const asType = String(options.as ?? 'url');
 
-    console.log('[LocalCoreConnector] handleResourceFetch:', uri, 'as:', asType);
+    console.warn('[LocalCoreConnector] handleResourceFetch:', uri, 'as:', asType);
 
     if (!uri) {
       return { success: false, error: 'Missing uri parameter' };
     }
 
     const parsed = this.parseChipsUri(uri);
-    console.log('[LocalCoreConnector] Parsed URI:', JSON.stringify(parsed));
+    console.warn('[LocalCoreConnector] Parsed URI:', JSON.stringify(parsed));
 
     // 网络资源：直接返回 URL
     if (parsed.type === 'network') {
@@ -575,7 +673,7 @@ export class LocalCoreConnector extends CoreConnector {
       relativePath = this.toRelativePath(parsed.path);
     }
 
-    console.log('[LocalCoreConnector] Reading binary file:', relativePath);
+    console.warn('[LocalCoreConnector] Reading binary file:', relativePath);
 
     try {
       // 读取二进制文件
@@ -839,7 +937,6 @@ export class LocalCoreConnector extends CoreConnector {
     }
 
     if (method === 'info') {
-      const info = await this.existsDevPath(relativePath);
       const name = relativePath.split('/').pop() ?? '';
       const extension = name.includes('.') ? name.split('.').pop() ?? '' : '';
       return {
@@ -969,7 +1066,12 @@ export class LocalCoreConnector extends CoreConnector {
           } else if (value instanceof ArrayBuffer) {
             await this.writeDevFile(targetPath, value);
           } else if (value instanceof Uint8Array) {
-            await this.writeDevFile(targetPath, value.buffer);
+            const buffer = value.buffer;
+            const normalizedBuffer =
+              buffer instanceof ArrayBuffer
+                ? buffer.slice(value.byteOffset, value.byteOffset + value.byteLength)
+                : value.slice().buffer;
+            await this.writeDevFile(targetPath, normalizedBuffer);
           }
         }
       }

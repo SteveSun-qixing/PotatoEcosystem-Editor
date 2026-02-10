@@ -7,6 +7,7 @@
 
 import { ref, computed } from 'vue';
 import { useFileDrop, type FileDragData, type FileDropType } from '@/core';
+import { t } from '@/services/i18n-service';
 
 const props = withDefaults(
   defineProps<{
@@ -120,7 +121,7 @@ function onDrop(event: DragEvent): void {
         <div class="file-drop-zone__indicator">
           <span class="file-drop-zone__icon">📁</span>
           <span class="file-drop-zone__text">
-            <slot name="hint">释放以导入文件</slot>
+            <slot name="hint">{{ t('drag_drop.drop_files') }}</slot>
           </span>
         </div>
       </div>

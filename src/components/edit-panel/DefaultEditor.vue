@@ -8,7 +8,7 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { Button, Checkbox, Input, Select, Textarea } from '@chips/components';
 import type { BaseCardInfo } from '@/core/state/stores/card';
-import type { FormField, DefaultEditorProps } from './types';
+import type { FormField } from './types';
 import { t } from '@/services/i18n-service';
 
 // ==================== Props ====================
@@ -98,7 +98,7 @@ const cardTypeName = computed(() => {
  */
 function initializeEditor(): void {
   // 初始化本地配置
-  localConfig.value = { ...props.baseCard.config } ?? {};
+  localConfig.value = { ...props.baseCard.config };
   
   // 初始化 JSON 内容
   jsonContent.value = formattedJson.value;
@@ -378,11 +378,23 @@ function formatJson(): void {
  * 重置配置
  */
 function resetConfig(): void {
-  localConfig.value = { ...props.baseCard.config } ?? {};
+  localConfig.value = { ...props.baseCard.config };
   jsonContent.value = formattedJson.value;
   jsonError.value = null;
   validationErrors.value.clear();
   emitConfigChange();
+}
+
+function handleStringFieldUpdate(key: string, value: unknown): void {
+  handleFieldChange(key, String(value ?? ''));
+}
+
+function handleNumberFieldUpdate(key: string, value: unknown): void {
+  handleFieldChange(key, Number(value));
+}
+
+function handleBooleanFieldUpdate(key: string, value: unknown): void {
+  handleFieldChange(key, Boolean(value));
 }
 
 /**
@@ -526,7 +538,7 @@ defineExpose({
           class="default-editor__input"
           :model-value="String(getFieldValue(field.key) ?? '')"
           :placeholder="field.placeholder ? t(field.placeholder) : undefined"
-          @update:model-value="(value) => handleFieldChange(field.key, value)"
+          @update:model-value="handleStringFieldUpdate(field.key, $event)"
         />
         
         <!-- 数字输入 -->
@@ -539,7 +551,7 @@ defineExpose({
           :min="field.validation?.min"
           :max="field.validation?.max"
           :placeholder="field.placeholder ? t(field.placeholder) : undefined"
-          @update:model-value="(value) => handleFieldChange(field.key, Number(value))"
+          @update:model-value="handleNumberFieldUpdate(field.key, $event)"
         />
         
         <!-- 布尔输入 -->
@@ -547,7 +559,7 @@ defineExpose({
           v-if="field.type === 'boolean'"
           class="default-editor__checkbox"
           :model-value="!!getFieldValue(field.key)"
-          @update:model-value="(value) => handleFieldChange(field.key, value)"
+          @update:model-value="handleBooleanFieldUpdate(field.key, $event)"
         >
           {{ t('default_editor.checkbox_enable') }}
         </Checkbox>
@@ -559,7 +571,7 @@ defineExpose({
           class="default-editor__select"
           :options="field.options ?? []"
           :model-value="getFieldValue(field.key) ?? ''"
-          @update:model-value="(value) => handleFieldChange(field.key, value)"
+          @update:model-value="handleStringFieldUpdate(field.key, $event)"
         />
         
         <!-- 多行文本 -->
@@ -570,7 +582,7 @@ defineExpose({
           :model-value="String(getFieldValue(field.key) ?? '')"
           :placeholder="field.placeholder ? t(field.placeholder) : undefined"
           rows="3"
-          @update:model-value="(value) => handleFieldChange(field.key, value)"
+          @update:model-value="handleStringFieldUpdate(field.key, $event)"
         />
         
         <!-- 颜色选择 -->
@@ -583,13 +595,13 @@ defineExpose({
             type="color"
             class="default-editor__color"
             :model-value="String(getFieldValue(field.key) ?? '#000000')"
-            @update:model-value="(value) => handleFieldChange(field.key, value)"
+            @update:model-value="handleStringFieldUpdate(field.key, $event)"
           />
           <Input
             type="text"
             class="default-editor__color-text"
             :model-value="String(getFieldValue(field.key) ?? '')"
-            @update:model-value="(value) => handleFieldChange(field.key, value)"
+            @update:model-value="handleStringFieldUpdate(field.key, $event)"
           />
         </div>
         

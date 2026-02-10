@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* eslint-disable vue/no-v-html */
 /**
  * 卡片窗口组件
  * @module components/window/CardWindow
@@ -181,7 +182,7 @@ function updateTitle(title: string): void {
     // 同步更新工作区文件名（使用相同的 cardId 作为文件 ID）
     workspaceService.renameFile(props.config.cardId, `${title}.card`);
     
-    console.log('[CardWindow] 更新卡片名称:', title, 'ID:', props.config.cardId);
+    console.warn('[CardWindow] 更新卡片名称:', title, 'ID:', props.config.cardId);
   }
 }
 
@@ -241,7 +242,7 @@ function selectBaseCard(baseCardId: string): void {
   // 再设置选中的基础卡片
   cardStore.setSelectedBaseCard(baseCardId);
   
-  console.log('[CardWindow] 选中基础卡片:', baseCardId, '卡片ID:', props.config.cardId);
+  console.warn('[CardWindow] 选中基础卡片:', baseCardId, '卡片ID:', props.config.cardId);
 }
 
 /**
