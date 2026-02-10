@@ -38,8 +38,6 @@ const {
   isSwitching,
   isInfiniteCanvas,
   isWorkbench,
-  switchToCanvas,
-  switchToWorkbench,
   toggleLayout,
 } = useLayoutSwitch({
   enableTransition: true,

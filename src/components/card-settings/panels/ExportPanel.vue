@@ -8,7 +8,8 @@
  */
 
 import { ref, computed, watch } from 'vue';
-import { Button, Progress } from '@chips/components';
+import { Progress } from '@chips/components';
+import type { Card as SDKCard } from '@chips/sdk';
 import type { CardInfo } from '@/core/state';
 import { getEditorSdk } from '@/services/sdk-service';
 import { resourceService } from '@/services/resource-service';
@@ -19,7 +20,7 @@ interface Props {
   /** 卡片 ID */
   cardId: string;
   /** 卡片信息 */
-  cardInfo: CardInfo | undefined;
+  cardInfo?: CardInfo;
 }
 
 const props = defineProps<Props>();
@@ -49,7 +50,7 @@ const externalRootRelative = toRootRelative(resourceService.externalRoot);
  */
 function sanitizeFileName(name: string): string {
   return name
-    .replace(/[\/:*?"<>|]/g, '_')
+    .replace(/[/:*?"<>|]/g, '_')
     .replace(/[ -]/g, '')
     .trim();
 }
@@ -130,7 +131,7 @@ function resolveCardPath(cardId: string, path?: string): string {
 async function saveCardToWorkspace(cardId: string, cardPath: string, card: CardInfo): Promise<void> {
   const sdk = await getEditorSdk();
   const timestamp = new Date().toISOString();
-  const cardData = {
+  const cardData: SDKCard = {
     id: cardId,
     metadata: {
       ...card.metadata,
@@ -145,7 +146,7 @@ async function saveCardToWorkspace(cardId: string, cardPath: string, card: CardI
         resources: [],
       },
     },
-    resources: new Map(),
+    resources: new Map<string, Blob | ArrayBuffer>(),
   };
 
   // 1. 保存卡片元数据和结构
@@ -164,7 +165,7 @@ async function saveCardToWorkspace(cardId: string, cardPath: string, card: CardI
     savedContentCount += 1;
   }
 
-  console.log(`[SaveCard] 卡片已保存到工作区: ${cardPath}，写入 ${savedContentCount} 个基础卡片内容文件`);
+  console.warn(`[SaveCard] 卡片已保存到工作区: ${cardPath}，写入 ${savedContentCount} 个基础卡片内容文件`);
 }
 
 // 导出格式配置

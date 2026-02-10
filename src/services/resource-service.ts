@@ -23,14 +23,14 @@ const config = new ConfigManager();
 const eventBus = new EventBus();
 
 let initialized = false;
-let resourceManager: ResourceManager | null = null;
+let _resourceManager: ResourceManager | null = null;
 let conversionApi: ConversionAPI | null = null;
 
 async function ensureInitialized(): Promise<void> {
   if (initialized) return;
   await config.initialize();
   const connector = await getEditorConnector();
-  resourceManager = new ResourceManager(connector, logger, eventBus);
+  _resourceManager = new ResourceManager(connector, logger, eventBus);
   conversionApi = new ConversionAPI(connector, logger, config);
   initialized = true;
 }

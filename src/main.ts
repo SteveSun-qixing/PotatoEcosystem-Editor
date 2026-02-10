@@ -21,5 +21,5 @@ app.mount('#app');
 // 开发模式下的调试信息
 if (import.meta.env.DEV) {
   // eslint-disable-next-line no-console
-  console.log('[Chips Editor] Development mode');
+  console.warn('[Chips Editor] Development mode');
 }

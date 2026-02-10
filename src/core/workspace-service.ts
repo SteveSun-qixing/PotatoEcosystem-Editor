@@ -122,13 +122,18 @@ function now(): string {
   return new Date().toISOString();
 }
 
-async function readMetadata(path: string): Promise<Record<string, any> | null> {
+async function readMetadata(path: string): Promise<Record<string, unknown> | null> {
   try {
     const content = await resourceService.readText(path);
-    return yaml.parse(content) as Record<string, any>;
+    return yaml.parse(content) as Record<string, unknown>;
   } catch {
     return null;
   }
+}
+
+function getMetadataString(metadata: Record<string, unknown> | null, key: string): string | undefined {
+  const value = metadata?.[key];
+  return typeof value === 'string' ? value : undefined;
 }
 
 /**
@@ -204,30 +209,34 @@ export function createWorkspaceService(events?: EventEmitter): WorkspaceService 
 
         if (await resourceService.exists(cardMetaPath)) {
           const metadata = await readMetadata(cardMetaPath);
-          const cardId = metadata?.card_id || entry.replace(/\.card$/i, '');
-          const cardName = metadata?.name || entry;
+          const cardId = getMetadataString(metadata, 'card_id') ?? entry.replace(/\.card$/i, '');
+          const cardName = getMetadataString(metadata, 'name') ?? entry;
+          const createdAt = getMetadataString(metadata, 'created_at') ?? meta.modified ?? now();
+          const modifiedAt = getMetadataString(metadata, 'modified_at') ?? meta.modified ?? now();
           result.push({
             id: cardId,
             name: `${stripExtension(cardName, '.card')}.card`,
             path: entryPath,
             type: 'card',
-            createdAt: metadata?.created_at || meta.modified || now(),
-            modifiedAt: metadata?.modified_at || meta.modified || now(),
+            createdAt,
+            modifiedAt,
           });
           continue;
         }
 
         if (await resourceService.exists(boxMetaPath)) {
           const metadata = await readMetadata(boxMetaPath);
-          const boxId = metadata?.box_id || entry.replace(/\.box$/i, '');
-          const boxName = metadata?.name || entry;
+          const boxId = getMetadataString(metadata, 'box_id') ?? entry.replace(/\.box$/i, '');
+          const boxName = getMetadataString(metadata, 'name') ?? entry;
+          const createdAt = getMetadataString(metadata, 'created_at') ?? meta.modified ?? now();
+          const modifiedAt = getMetadataString(metadata, 'modified_at') ?? meta.modified ?? now();
           result.push({
             id: boxId,
             name: `${stripExtension(boxName, '.box')}.box`,
             path: entryPath,
             type: 'box',
-            createdAt: metadata?.created_at || meta.modified || now(),
-            modifiedAt: metadata?.modified_at || meta.modified || now(),
+            createdAt,
+            modifiedAt,
           });
           continue;
         }
@@ -282,7 +291,7 @@ export function createWorkspaceService(events?: EventEmitter): WorkspaceService 
       state.value.initialized = true;
 
       eventEmitter.emit('workspace:initialized', { rootPath: state.value.rootPath });
-      console.log('[WorkspaceService] 工作区已初始化:', state.value.rootPath);
+      console.warn('[WorkspaceService] 工作区已初始化:', state.value.rootPath);
     } catch (error) {
       console.error('[WorkspaceService] 初始化失败:', error);
       throw error;

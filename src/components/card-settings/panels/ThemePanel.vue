@@ -62,9 +62,10 @@ async function loadThemes(): Promise<void> {
       themeList.length > 0
         ? themeList.map((theme) => ({
             id: theme.id,
-            name: THEME_NAME_KEY_MAP[theme.id]
-              ? t(THEME_NAME_KEY_MAP[theme.id])
-              : theme.name,
+            name: (() => {
+              const nameKey = THEME_NAME_KEY_MAP[theme.id];
+              return nameKey ? t(nameKey) : theme.name;
+            })(),
             installed: true,
           }))
         : [

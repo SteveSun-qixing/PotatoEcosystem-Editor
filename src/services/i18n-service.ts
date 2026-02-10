@@ -44,7 +44,11 @@ function normalizeLocale(locale: string): string {
 
 function getTranslationTable(locale: string): TranslationTable {
   const normalized = normalizeLocale(locale);
-  return LOCAL_TRANSLATIONS[normalized] ?? LOCAL_TRANSLATIONS[DEFAULT_LOCALE];
+  const fallbackTable = LOCAL_TRANSLATIONS[DEFAULT_LOCALE];
+  if (fallbackTable) {
+    return LOCAL_TRANSLATIONS[normalized] ?? fallbackTable;
+  }
+  return LOCAL_TRANSLATIONS[normalized] ?? {};
 }
 
 function resolveTranslationValue(

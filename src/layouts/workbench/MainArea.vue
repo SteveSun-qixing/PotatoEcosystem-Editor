@@ -7,7 +7,7 @@
 
 import { ref, computed, watch, provide } from 'vue';
 import { Button } from '@chips/components';
-import { useCardStore, useUIStore } from '@/core/state';
+import { useUIStore } from '@/core/state';
 import type { CardWindowConfig } from '@/types';
 import { t } from '@/services/i18n-service';
 
@@ -52,7 +52,6 @@ const emit = defineEmits<{
   'tab-reorder': [fromIndex: number, toIndex: number];
 }>();
 
-const cardStore = useCardStore();
 const uiStore = useUIStore();
 
 /** 当前活跃标签 ID */
@@ -84,7 +83,7 @@ const emptyTextValue = computed(() => props.emptyText || t('main_area.empty'));
  * 获取卡片图标
  * @param window - 卡片窗口配置
  */
-function getCardIcon(window: CardWindowConfig): string {
+function getCardIcon(_window: CardWindowConfig): string {
   // TODO: 根据卡片类型返回不同图标
   return '📄';
 }

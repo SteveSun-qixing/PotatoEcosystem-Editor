@@ -5,15 +5,20 @@
  */
 
 import { defineStore } from 'pinia';
+import type {
+  BaseCardInfo as SDKBaseCardInfo,
+  Card as SDKCard,
+  CardMetadata as SDKCardMetadata,
+} from '@chips/sdk';
 
 /**
  * 基础卡片信息
  */
 export interface BaseCardInfo {
   /** 基础卡片 ID */
-  id: string;
+  id: SDKBaseCardInfo['id'];
   /** 基础卡片类型 */
-  type: string;
+  type: SDKBaseCardInfo['type'];
   /** 配置数据 */
   config?: Record<string, unknown>;
 }
@@ -21,24 +26,7 @@ export interface BaseCardInfo {
 /**
  * 卡片元数据
  */
-export interface CardMetadata {
-  /** 协议版本 */
-  chip_standards_version: string;
-  /** 卡片 ID */
-  card_id: string;
-  /** 卡片名称 */
-  name: string;
-  /** 创建时间 */
-  created_at: string;
-  /** 修改时间 */
-  modified_at: string;
-  /** 主题 */
-  theme?: string;
-  /** 标签 */
-  tags?: Array<string | string[]>;
-  /** 描述 */
-  description?: string;
-}
+export type CardMetadata = SDKCardMetadata;
 
 /**
  * 卡片信息
@@ -65,17 +53,13 @@ export interface CardInfo {
  */
 export interface Card {
   /** 卡片 ID */
-  id: string;
+  id: SDKCard['id'];
   /** 卡片元数据 */
   metadata: CardMetadata;
   /** 卡片结构 */
   structure: {
     structure: BaseCardInfo[];
-    manifest: {
-      card_count: number;
-      resource_count: number;
-      resources: Array<{ path: string; size: number; mime_type: string }>;
-    };
+    manifest: SDKCard['structure']['manifest'];
   };
 }
 
@@ -194,7 +178,7 @@ export const useCardStore = defineStore('card', {
      * @param card - 卡片数据
      * @param filePath - 文件路径（可选）
      */
-    addCard(card: Card, filePath?: string): void {
+    addCard(card: SDKCard, filePath?: string): void {
       const cardInfo: CardInfo = {
         id: card.id,
         metadata: card.metadata,

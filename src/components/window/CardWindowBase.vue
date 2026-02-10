@@ -14,13 +14,6 @@ import { Button } from '@chips/components';
 import type { CardWindowConfig, WindowPosition, WindowSize } from '@/types';
 import { t } from '@/services/i18n-service';
 
-// 从 InfiniteCanvas 注入画布上下文（获取缩放比例）
-const canvasContext = inject<{
-  zoom: Ref<number>;
-  panX: Ref<number>;
-  panY: Ref<number>;
-}>('canvas', null);
-
 interface Props {
   /** 窗口配置 */
   config: CardWindowConfig;
@@ -55,6 +48,13 @@ const emit = defineEmits<{
   /** 窗口收起/展开 */
   collapse: [];
 }>();
+
+// 从 InfiniteCanvas 注入画布上下文（获取缩放比例）
+const canvasContext = inject<{
+  zoom: Ref<number>;
+  panX: Ref<number>;
+  panY: Ref<number>;
+} | null>('canvas', null);
 
 // 拖拽状态
 const isDragging = ref(false);

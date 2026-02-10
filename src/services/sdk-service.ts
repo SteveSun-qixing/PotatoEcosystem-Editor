@@ -26,6 +26,10 @@ function createConnector(): CoreConnector {
     connectorInstance = new CoreConnector({ url: CORE_WS_URL });
   }
 
+  if (!connectorInstance) {
+    throw new Error('Failed to create connector instance');
+  }
+
   return connectorInstance;
 }
 

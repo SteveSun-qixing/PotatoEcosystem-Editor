@@ -4,9 +4,8 @@
  * @description 提供工作台布局的响应式控制和状态管理
  */
 
-import { ref, computed, reactive, watch } from 'vue';
-import { useEditorStore, useUIStore } from '@/core/state';
-import type { LayoutType } from '@/types';
+import { ref, computed, reactive, watch, type ComputedRef, type Ref } from 'vue';
+import { useUIStore } from '@/core/state';
 
 /**
  * 工作台布局配置选项
@@ -61,21 +60,21 @@ export interface WorkbenchControlsReturn {
   /** 布局状态 */
   state: WorkbenchState;
   /** 左侧面板宽度 */
-  leftPanelWidth: ReturnType<typeof ref<number>>;
+  leftPanelWidth: Ref<number>;
   /** 右侧面板宽度 */
-  rightPanelWidth: ReturnType<typeof ref<number>>;
+  rightPanelWidth: Ref<number>;
   /** 左侧面板是否展开 */
-  leftPanelExpanded: ReturnType<typeof ref<boolean>>;
+  leftPanelExpanded: Ref<boolean>;
   /** 右侧面板是否展开 */
-  rightPanelExpanded: ReturnType<typeof ref<boolean>>;
+  rightPanelExpanded: Ref<boolean>;
   /** 是否显示左侧面板 */
-  showLeftPanel: ReturnType<typeof ref<boolean>>;
+  showLeftPanel: Ref<boolean>;
   /** 是否显示右侧面板 */
-  showRightPanel: ReturnType<typeof ref<boolean>>;
+  showRightPanel: Ref<boolean>;
   /** 是否正在调整布局 */
-  isResizing: ReturnType<typeof ref<boolean>>;
+  isResizing: Ref<boolean>;
   /** 主区域可用宽度 */
-  mainAreaWidth: ReturnType<typeof computed<number>>;
+  mainAreaWidth: ComputedRef<number>;
   /** 切换左侧面板 */
   toggleLeftPanel: () => void;
   /** 切换右侧面板 */
@@ -148,7 +147,6 @@ export function useWorkbenchControls(
   options: WorkbenchOptions = {}
 ): WorkbenchControlsReturn {
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  const editorStore = useEditorStore();
   const uiStore = useUIStore();
 
   // 响应式状态

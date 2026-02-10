@@ -128,7 +128,7 @@ function openCoverMaker(): void {
  */
 function handleCoverSave(data: CoverData): void {
   // TODO: 调用 SDK 保存封面到卡片文件夹
-  console.log('Cover saved:', data);
+  console.warn('Cover saved:', data);
   showCoverMaker.value = false;
 }
 

@@ -191,11 +191,14 @@ export function createCardService(events?: EventEmitter): CardService {
 
     // 如果有基础卡片，选中它
     if (basicCards.length > 0) {
-      selectedBasicCardId.value = basicCards[0]!.id;
+      const firstCard = basicCards[0];
+      if (firstCard) {
+        selectedBasicCardId.value = firstCard.id;
+      }
     }
 
     eventEmitter.emit('card:created', { card: newCard });
-    console.log('[CardService] 创建卡片:', name, '初始基础卡片:', initialBasicCard?.type);
+    console.warn('[CardService] 创建卡片:', name, '初始基础卡片:', initialBasicCard?.type);
 
     return newCard;
   }
@@ -237,7 +240,7 @@ export function createCardService(events?: EventEmitter): CardService {
     selectedCardId.value = id;
 
     eventEmitter.emit('card:opened', { card });
-    console.log('[CardService] 打开卡片:', path);
+    console.warn('[CardService] 打开卡片:', path);
 
     return card;
   }
@@ -259,7 +262,7 @@ export function createCardService(events?: EventEmitter): CardService {
       }
 
       eventEmitter.emit('card:closed', { card });
-      console.log('[CardService] 关闭卡片:', card.metadata.name);
+      console.warn('[CardService] 关闭卡片:', card.metadata.name);
     }
   }
 
@@ -281,7 +284,7 @@ export function createCardService(events?: EventEmitter): CardService {
     card.metadata.modifiedAt = now();
 
     eventEmitter.emit('card:saved', { card });
-    console.log('[CardService] 保存卡片:', card.metadata.name);
+    console.warn('[CardService] 保存卡片:', card.metadata.name);
   }
 
   /**
@@ -325,7 +328,7 @@ export function createCardService(events?: EventEmitter): CardService {
     selectedBasicCardId.value = basicCard.id;
 
     eventEmitter.emit('card:basic-card-added', { cardId, basicCard, position });
-    console.log('[CardService] 添加基础卡片:', type, '到卡片:', card.metadata.name);
+    console.warn('[CardService] 添加基础卡片:', type, '到卡片:', card.metadata.name);
 
     return basicCard;
   }
@@ -351,7 +354,7 @@ export function createCardService(events?: EventEmitter): CardService {
       }
 
       eventEmitter.emit('card:basic-card-removed', { cardId, basicCardId });
-      console.log('[CardService] 删除基础卡片:', basicCardId);
+      console.warn('[CardService] 删除基础卡片:', basicCardId);
     }
   }
 
@@ -375,7 +378,7 @@ export function createCardService(events?: EventEmitter): CardService {
       card.metadata.modifiedAt = now();
 
       eventEmitter.emit('card:basic-card-moved', { cardId, basicCardId, newPosition });
-      console.log('[CardService] 移动基础卡片:', basicCardId, '到位置:', newPosition);
+      console.warn('[CardService] 移动基础卡片:', basicCardId, '到位置:', newPosition);
     }
   }
 

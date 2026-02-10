@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* eslint-disable vue/no-v-html */
 /**
  * 文件项组件
  * @module components/file-manager/FileItem

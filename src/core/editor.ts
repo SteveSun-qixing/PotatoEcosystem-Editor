@@ -4,7 +4,7 @@
  * @description Chips 编辑器的核心类，整合所有模块
  */
 
-import type { ChipsSDK, Card as SDKCard } from '@chips/sdk';
+import type { ChipsSDK, Card as SDKCard, Tag } from '@chips/sdk';
 import type { SDKConnectorOptions } from './connector';
 import { SDKConnector, createConnector } from './connector';
 import { EventEmitter, createEventEmitter } from './event-manager';
@@ -16,6 +16,8 @@ import {
 } from './base-card-content-loader';
 import type { EditorConfig, EditorState, LayoutType, WindowConfig } from '@/types';
 
+type RuntimeEditorConfig = Omit<Required<EditorConfig>, 'sdk'> & Pick<EditorConfig, 'sdk'>;
+
 /** 创建卡片选项 */
 export interface CreateCardOptions {
   /** 卡片名称 */
@@ -23,7 +25,7 @@ export interface CreateCardOptions {
   /** 卡片类型 */
   type?: string;
   /** 标签 */
-  tags?: Array<string | string[]>;
+  tags?: Tag[];
   /** 描述 */
   description?: string;
   /** 主题 */
@@ -82,7 +84,7 @@ export interface SaveCardOptions {
  */
 export class ChipsEditor {
   /** 编辑器配置 */
-  private config: Required<EditorConfig>;
+  private config: RuntimeEditorConfig;
   /** 事件发射器 */
   private events: EventEmitter;
   /** SDK 连接器 */
@@ -620,7 +622,7 @@ export class ChipsEditor {
   /**
    * 获取编辑器配置
    */
-  get configuration(): Readonly<Required<EditorConfig>> {
+  get configuration(): Readonly<RuntimeEditorConfig> {
     return this.config;
   }
 
@@ -705,7 +707,7 @@ export class ChipsEditor {
    */
   private log(...args: unknown[]): void {
     if (this.config.debug) {
-      console.log('[ChipsEditor]', ...args);
+      console.warn('[ChipsEditor]', ...args);
     }
   }
 }

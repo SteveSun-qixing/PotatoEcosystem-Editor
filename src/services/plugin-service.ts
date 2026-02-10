@@ -72,7 +72,11 @@ function selectEditorLoader(
 
   scored.sort((a, b) => b.score - a.score);
   return async () => {
-    const module = await scored[0].entry.loader();
+    const bestEntry = scored[0];
+    if (!bestEntry) {
+      throw new Error('No plugin editor module found');
+    }
+    const module = await bestEntry.entry.loader();
     return (module as { default: Component }).default;
   };
 }
@@ -116,11 +120,9 @@ const BUILTIN_PLUGINS: EditorPluginDefinition[] = buildPluginDefinitions();
 
 const componentCache = new Map<string, Component>();
 let pluginsRegistered = false;
-let sdkInstance: ChipsSDK | null = null;
 
 async function ensureRegistered(): Promise<ChipsSDK> {
   const sdk = await getEditorSdk();
-  sdkInstance = sdk;
 
   if (!pluginsRegistered) {
     for (const plugin of BUILTIN_PLUGINS) {

@@ -64,11 +64,6 @@ const expandedSubmenu = ref<string | null>(null);
 /** 是否选中了单个文件 */
 const isSingleFile = computed(() => props.selectedFiles.length === 1);
 
-/** 是否选中了目录 */
-const hasDirectory = computed(() => 
-  props.selectedFiles.some((f) => f.isDirectory)
-);
-
 /** 是否有选中项 */
 const hasSelection = computed(() => props.selectedFiles.length > 0);
 
@@ -156,6 +151,12 @@ const menuItems = computed<MenuItem[]>(() => {
       icon: '🔍',
     });
   }
+
+  items.push({
+    id: 'refresh',
+    label: 'file_manager.refresh',
+    icon: '🔄',
+  });
 
   return items;
 });
@@ -302,6 +303,7 @@ onUnmounted(() => {
               'context-menu__item--has-submenu': item.children,
               'context-menu__item--expanded': expandedSubmenu === item.id,
             }"
+            :data-action-id="item.id"
             role="menuitem"
             :aria-disabled="item.disabled"
             @click="handleItemClick(item)"
@@ -323,6 +325,7 @@ onUnmounted(() => {
                   :key="child.id"
                   class="context-menu__item"
                   :class="{ 'context-menu__item--disabled': child.disabled }"
+                  :data-action-id="child.id"
                   role="menuitem"
                   :aria-disabled="child.disabled"
                   @click.stop="handleSubmenuClick(child)"

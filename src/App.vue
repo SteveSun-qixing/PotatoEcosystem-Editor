@@ -8,15 +8,17 @@
 import { ref, onMounted, onUnmounted, provide, computed } from 'vue';
 import { ChipsProvider, ThemeProvider, Button } from '@chips/components';
 import { InfiniteCanvas, Workbench } from '@/layouts';
-import { useEditorStore, useUIStore, useCardStore } from '@/core/state';
+import { useEditorStore, useUIStore, useCardStore, useSettingsStore } from '@/core/state';
 import { useWindowManager } from '@/core/window-manager';
 import { useWorkspaceService } from '@/core/workspace-service';
 import { FileManager } from '@/components/file-manager';
 import { EditPanel } from '@/components/edit-panel';
 import { CardBoxLibrary, type DragData } from '@/components/card-box-library';
+import { EngineSettingsDialog, builtinPanelDefinitions } from '@/components/engine-settings';
 import type { CardWindowConfig, ToolWindowConfig } from '@/types';
 import { generateId62, generateScopedId } from '@/utils';
 import { initializeEditorI18n, t } from '@/services/i18n-service';
+import { initializeSettingsService } from '@/services/settings-service';
 import { resourceService } from '@/services/resource-service';
 import { loadBaseCardConfigsFromContent } from '@/core/base-card-content-loader';
 import yaml from 'yaml';
@@ -25,12 +27,30 @@ import yaml from 'yaml';
 const editorStore = useEditorStore();
 const uiStore = useUIStore();
 const cardStore = useCardStore();
+const settingsStore = useSettingsStore();
 const windowManager = useWindowManager();
 const workspaceService = useWorkspaceService();
 
 /** 应用状态 */
 const isReady = ref(false);
 const errorMessage = ref<string | null>(null);
+
+/** 引擎设置弹窗状态 */
+const showEngineSettings = ref(false);
+
+/**
+ * 打开引擎设置弹窗
+ */
+function openEngineSettings(): void {
+  showEngineSettings.value = true;
+}
+
+/**
+ * 关闭引擎设置弹窗
+ */
+function closeEngineSettings(): void {
+  showEngineSettings.value = false;
+}
 
 /** 当前布局类型 */
 const currentLayout = computed(() => editorStore.currentLayout);
@@ -271,6 +291,7 @@ async function ensureWorkspaceCardLoaded(data: WorkspaceFileDragData): Promise<s
         resources: [],
       },
     },
+    resources: new Map<string, Blob | ArrayBuffer>(),
   });
 
   cardStore.updateFilePath(metadataCardId, data.filePath);
@@ -337,7 +358,7 @@ async function handleDropCreate(
   worldPosition: { x: number; y: number },
   target?: CardWindowDropTarget
 ): Promise<void> {
-  console.log('[App] 拖放创建:', data, '位置:', worldPosition, '目标:', target);
+  console.warn('[App] 拖放创建:', data, '位置:', worldPosition, '目标:', target);
 
   if (data.type === 'card') {
     if (target && insertLibraryBaseCard(data, target)) {
@@ -400,6 +421,7 @@ async function createCompositeCard(
         resources: [],
       },
     },
+    resources: new Map<string, Blob | ArrayBuffer>(),
   });
 
   // 设置为活动卡片
@@ -434,7 +456,7 @@ async function createCompositeCard(
   );
   cardStore.updateFilePath(cardId, workspaceFile.path);
 
-  console.log('[App] 已创建复合卡片:', cardName, 'ID:', cardId, '包含基础卡片:', data.name);
+  console.warn('[App] 已创建复合卡片:', cardName, 'ID:', cardId, '包含基础卡片:', data.name);
 }
 
 /**
@@ -468,7 +490,7 @@ async function createBox(
   position: { x: number; y: number }
 ): Promise<void> {
   // TODO: 实现箱子创建逻辑
-  console.log('[App] 创建箱子:', data.name, '布局类型:', data.typeId, '位置:', position);
+  console.warn('[App] 创建箱子:', data.name, '布局类型:', data.typeId, '位置:', position);
   
   // 暂时创建一个工作区文件记录
   const boxIndex = cardCounter++;
@@ -500,6 +522,12 @@ onMounted(async () => {
     // 初始化工作区服务
     await workspaceService.initialize();
 
+    // 注册所有内置设置面板到注册中心
+    settingsStore.registerPanels(builtinPanelDefinitions);
+
+    // 初始化引擎设置服务（恢复持久化数据、应用设置）
+    await initializeSettingsService();
+
     // 初始化工具窗口到 uiStore
     initializeToolWindows();
 
@@ -510,7 +538,7 @@ onMounted(async () => {
     editorStore.setLayout('infinite-canvas');
 
     isReady.value = true;
-    console.log('[Chips Editor] 初始化完成');
+    console.warn('[Chips Editor] 初始化完成');
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('app.error_unknown');
     console.error('[Chips Editor] Initialization failed:', error);
@@ -523,6 +551,7 @@ provide('editorContext', {
   uiStore,
   cardStore,
   workspaceService,
+  openEngineSettings,
 });
 </script>
 
@@ -561,6 +590,7 @@ provide('editorContext', {
       <InfiniteCanvas 
         v-if="currentLayout === 'infinite-canvas'"
         @drop-create="handleDropCreate"
+        @open-settings="openEngineSettings"
       >
         <template #desktop>
           <!-- 卡片窗口由 DesktopLayer 自动渲染 -->
@@ -590,6 +620,12 @@ provide('editorContext', {
       >
         <p>{{ t('app.layout_unknown', { layout: currentLayout }) }}</p>
       </div>
+
+      <!-- 引擎设置弹窗 -->
+      <EngineSettingsDialog
+        :visible="showEngineSettings"
+        @close="closeEngineSettings"
+      />
     </template>
       </div>
     </ChipsProvider>
@@ -682,4 +718,5 @@ provide('editorContext', {
   justify-content: center;
   color: var(--chips-color-text-secondary, #666666);
 }
+
 </style>

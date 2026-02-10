@@ -53,11 +53,12 @@ describe('Dock', () => {
       expect(wrapper.find('.dock').exists()).toBe(false);
     });
 
-    it('should not render when there are no minimized tools', () => {
+    it('should render even when there are no tool windows (settings button always present)', () => {
       uiStore.setDockVisible(true);
       wrapper = mount(Dock);
 
-      expect(wrapper.find('.dock').exists()).toBe(false);
+      // Dock 始终可见（包含设置按钮）
+      expect(wrapper.find('.dock').exists()).toBe(true);
     });
 
     it('should render when dock is visible and has minimized tools', () => {
@@ -71,7 +72,7 @@ describe('Dock', () => {
       expect(wrapper.find('.dock').exists()).toBe(true);
     });
 
-    it('should render DockItem for each minimized tool', () => {
+    it('should render DockItem for each tool window plus settings button', () => {
       uiStore.setDockVisible(true);
       const tool1 = createMockToolWindow('tool-1', {
         state: 'minimized',
@@ -91,10 +92,11 @@ describe('Dock', () => {
       wrapper = mount(Dock);
 
       const dockItems = wrapper.findAll('.dock-item');
-      expect(dockItems).toHaveLength(2);
+      // 2 个工具窗口 + 1 个设置按钮
+      expect(dockItems).toHaveLength(3);
     });
 
-    it('should not render tools that are not minimized', () => {
+    it('should render all tool windows plus settings button in dock', () => {
       uiStore.setDockVisible(true);
       const tool1 = createMockToolWindow('tool-1', { state: 'normal' });
       const tool2 = createMockToolWindow('tool-2', { state: 'minimized' });
@@ -105,7 +107,8 @@ describe('Dock', () => {
       wrapper = mount(Dock);
 
       const dockItems = wrapper.findAll('.dock-item');
-      expect(dockItems).toHaveLength(1);
+      // 2 个工具窗口（normal + minimized 都显示）+ 1 个设置按钮
+      expect(dockItems).toHaveLength(3);
     });
   });
 

@@ -245,7 +245,10 @@ export class CommandManager {
     this.isExecuting = true;
 
     try {
-      const item = this.undoStack.pop()!;
+      const item = this.undoStack.pop();
+      if (!item) {
+        return false;
+      }
       await item.command.undo();
 
       // 移动到重做栈
@@ -282,7 +285,10 @@ export class CommandManager {
     this.isExecuting = true;
 
     try {
-      const item = this.redoStack.pop()!;
+      const item = this.redoStack.pop();
+      if (!item) {
+        return false;
+      }
       await item.command.redo();
 
       // 移动回撤销栈
@@ -411,10 +417,12 @@ export class CommandManager {
     event: K,
     callback: CommandManagerEventCallback<K>
   ): void {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, new Set());
+    const callbacks = this.listeners.get(event);
+    if (callbacks) {
+      callbacks.add(callback as (data: unknown) => void);
+      return;
     }
-    this.listeners.get(event)!.add(callback as (data: unknown) => void);
+    this.listeners.set(event, new Set([callback as (data: unknown) => void]));
   }
 
   /**
@@ -528,7 +536,7 @@ export class CommandManager {
    */
   private log(...args: unknown[]): void {
     if (this.config.debug) {
-      console.log('[CommandManager]', ...args);
+      console.warn('[CommandManager]', ...args);
     }
   }
 }

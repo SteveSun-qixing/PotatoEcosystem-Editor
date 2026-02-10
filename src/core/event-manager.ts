@@ -33,7 +33,7 @@ interface EventSubscription {
  * 
  * // 订阅事件
  * emitter.on('card:saved', (data) => {
- *   console.log('卡片已保存:', data);
+ *   console.warn('卡片已保存:', data);
  * });
  * 
  * // 发布事件
@@ -59,7 +59,7 @@ export class EventEmitter {
    * @example
    * ```typescript
    * const id = emitter.on('card:opened', (data) => {
-   *   console.log('打开卡片:', data.cardId);
+   *   console.warn('打开卡片:', data.cardId);
    * });
    * ```
    */
@@ -74,7 +74,10 @@ export class EventEmitter {
     if (!this.subscriptions.has(eventType)) {
       this.subscriptions.set(eventType, []);
     }
-    this.subscriptions.get(eventType)!.push(subscription);
+    const subscriptions = this.subscriptions.get(eventType);
+    if (subscriptions) {
+      subscriptions.push(subscription);
+    }
 
     return id;
   }
@@ -89,7 +92,7 @@ export class EventEmitter {
    * @example
    * ```typescript
    * emitter.once('editor:ready', () => {
-   *   console.log('编辑器已就绪');
+   *   console.warn('编辑器已就绪');
    * });
    * ```
    */
@@ -104,7 +107,10 @@ export class EventEmitter {
     if (!this.subscriptions.has(eventType)) {
       this.subscriptions.set(eventType, []);
     }
-    this.subscriptions.get(eventType)!.push(subscription);
+    const subscriptions = this.subscriptions.get(eventType);
+    if (subscriptions) {
+      subscriptions.push(subscription);
+    }
 
     return id;
   }
@@ -139,7 +145,10 @@ export class EventEmitter {
       return;
     }
 
-    const subs = this.subscriptions.get(eventType)!;
+    const subs = this.subscriptions.get(eventType);
+    if (!subs) {
+      return;
+    }
     const index = subs.findIndex((sub) =>
       typeof handlerOrId === 'string'
         ? sub.id === handlerOrId
@@ -205,7 +214,7 @@ export class EventEmitter {
    * ```typescript
    * try {
    *   const data = await emitter.waitFor<{ cardId: string }>('card:saved', 5000);
-   *   console.log('卡片已保存:', data.cardId);
+   *   console.warn('卡片已保存:', data.cardId);
    * } catch (error) {
    *   console.error('等待超时');
    * }

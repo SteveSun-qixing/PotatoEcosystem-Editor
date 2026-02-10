@@ -8,7 +8,7 @@
 import { ref, computed, provide, onMounted, onUnmounted, watch } from 'vue';
 import SidePanel from './SidePanel.vue';
 import MainArea from './MainArea.vue';
-import { useEditorStore, useUIStore, useCardStore } from '@/core/state';
+import { useUIStore, useCardStore } from '@/core/state';
 import { t } from '@/services/i18n-service';
 
 /** 工作台布局配置 */
@@ -45,7 +45,6 @@ const emit = defineEmits<{
   'tab-close': [cardId: string];
 }>();
 
-const editorStore = useEditorStore();
 const uiStore = useUIStore();
 const cardStore = useCardStore();
 

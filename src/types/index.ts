@@ -39,3 +39,19 @@ export type {
   LayoutManager,
   CanvasManager,
 } from './layout';
+
+// 设置类型
+export type {
+  SettingsCategoryId,
+  SettingsCategoryGroup,
+  SettingsCategory,
+  SettingsPanelDefinition,
+  LanguageSettingsData,
+  ThemeSettingsData,
+  LayoutSettingsData,
+  ToolsSettingsData,
+  FileModeSettingsData,
+  AboutSettingsData,
+  ThemeOption,
+  SettingsChangeEvent,
+} from './settings';

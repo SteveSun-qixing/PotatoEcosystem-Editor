@@ -148,7 +148,7 @@ async function handleCoverSave(data: CoverData): Promise<void> {
   try {
     // TODO: 通过 SDK 的 CoverAPI 保存封面
     // await sdk.cover.save(props.cardId, data);
-    console.log('Cover saved:', data);
+    console.warn('Cover saved:', data);
     showCoverMaker.value = false;
   } catch (error) {
     console.error('Failed to save cover:', error);
@@ -233,7 +233,7 @@ async function handleCoverSave(data: CoverData): Promise<void> {
                     type="text"
                     class="tag-input__field"
                     :placeholder="t('card_settings.tag_placeholder')"
-                    @pressEnter="addTag"
+                    @press-enter="addTag"
                   />
                   <Button html-type="button" type="text" class="tag-input__action" @click="addTag">
                     {{ t('card_settings.tag_add') }}
@@ -281,11 +281,7 @@ async function handleCoverSave(data: CoverData): Promise<void> {
 
             <!-- 导出 - 使用 ExportPanel 组件 -->
             <div v-show="selectedTab === 'export'" class="panel">
-              <ExportPanel
-                :card-id="cardId"
-                :sdk="sdk"
-                :default-output-path="`/exports/${cardInfo?.metadata.name || t('card_settings.untitled')}`"
-              />
+              <ExportPanel :card-id="cardId" :card-info="cardInfo" />
             </div>
           </div>
 

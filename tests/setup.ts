@@ -552,6 +552,79 @@ vi.mock('@chips/components', () => {
     },
   });
 
+  const ModalStub = defineComponent({
+    name: 'ChipsModal',
+    inheritAttrs: false,
+    props: {
+      visible: { type: Boolean, default: false },
+      title: { type: String, default: '' },
+    },
+    emits: ['update:visible', 'close'],
+    setup(props, { attrs, slots, emit }) {
+      return () =>
+        props.visible
+          ? h('div', { ...attrs, class: 'chips-modal' }, slots.default ? slots.default() : [])
+          : null;
+    },
+  });
+
+  const TabsStub = defineComponent({
+    name: 'ChipsTabs',
+    inheritAttrs: false,
+    props: {
+      modelValue: { type: String, default: '' },
+    },
+    emits: ['update:modelValue', 'change'],
+    setup(_props, { attrs, slots }) {
+      return () => h('div', { ...attrs, class: 'chips-tabs' }, slots.default ? slots.default() : []);
+    },
+  });
+
+  const TabPaneStub = defineComponent({
+    name: 'ChipsTabPane',
+    inheritAttrs: false,
+    props: {
+      name: { type: String, default: '' },
+      label: { type: String, default: '' },
+    },
+    setup(_props, { attrs, slots }) {
+      return () => h('div', { ...attrs, class: 'chips-tab-pane' }, slots.default ? slots.default() : []);
+    },
+  });
+
+  const LoadingStub = defineComponent({
+    name: 'ChipsLoading',
+    inheritAttrs: false,
+    props: {
+      loading: { type: Boolean, default: false },
+      size: { type: String, default: 'default' },
+    },
+    setup(props, { attrs, slots }) {
+      return () =>
+        h('div', { ...attrs, class: 'chips-loading' }, [
+          props.loading ? h('span', 'Loading...') : null,
+          slots.default ? slots.default() : [],
+        ]);
+    },
+  });
+
+  const AlertStub = defineComponent({
+    name: 'ChipsAlert',
+    inheritAttrs: false,
+    props: {
+      type: { type: String, default: 'info' },
+      message: { type: String, default: '' },
+    },
+    emits: ['close'],
+    setup(props, { attrs, slots }) {
+      return () =>
+        h('div', { ...attrs, class: 'chips-alert' }, [
+          h('span', props.message),
+          slots.default ? slots.default() : [],
+        ]);
+    },
+  });
+
   return {
     version: '0.1.0',
     Button: ButtonStub,
@@ -568,6 +641,11 @@ vi.mock('@chips/components', () => {
     Text: TextStub,
     ChipsProvider: ProviderStub,
     ThemeProvider: ProviderStub,
+    Modal: ModalStub,
+    Tabs: TabsStub,
+    TabPane: TabPaneStub,
+    Loading: LoadingStub,
+    Alert: AlertStub,
   };
 });
 

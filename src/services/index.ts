@@ -8,3 +8,4 @@ export * from './resource-service';
 export * from './sdk-service';
 export * from './i18n-service';
 export * from './plugin-service';
+export * from './settings-service';

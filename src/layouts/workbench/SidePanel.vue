@@ -5,7 +5,7 @@
  * @description 可调整宽度、支持收起/展开的侧边面板
  */
 
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
 import { Button } from '@chips/components';
 import { t } from '@/services/i18n-service';
 

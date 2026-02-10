@@ -44,7 +44,10 @@ const emit = defineEmits<{
 const isEditingTitle = ref(false);
 const editingTitle = ref('');
 const titleInputRef = ref<InputInstance | null>(null);
-const menuRef = ref<HTMLElement | null>(null);
+
+function getTitleInputElement(): HTMLInputElement | null {
+  return titleInputRef.value?.inputRef ?? null;
+}
 
 /**
  * 开始编辑标题
@@ -93,21 +96,6 @@ function handleKeydown(e: KeyboardEvent): void {
 }
 
 /**
- * 处理全局点击事件
- * 当点击输入框外部时，保存并关闭编辑
- */
-function handleGlobalClick(e: MouseEvent): void {
-  if (!isEditingTitle.value) return;
-  
-  const target = e.target as HTMLElement;
-  // 如果点击的不是输入框本身，则保存并关闭
-  const inputElement = titleInputRef.value?.$el;
-  if (inputElement && !inputElement.contains(target)) {
-    saveTitle();
-  }
-}
-
-/**
  * 处理全局 mousedown 事件
  * 在 mousedown 阶段就检测，确保 blur 之前处理
  */
@@ -116,7 +104,7 @@ function handleGlobalMousedown(e: MouseEvent): void {
   
   const target = e.target as HTMLElement;
   // 如果点击的不是输入框本身，则保存并关闭
-  const inputElement = titleInputRef.value?.$el;
+  const inputElement = getTitleInputElement();
   if (inputElement && !inputElement.contains(target)) {
     saveTitle();
   }

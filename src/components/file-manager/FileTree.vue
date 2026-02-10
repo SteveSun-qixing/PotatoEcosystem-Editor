@@ -8,6 +8,7 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import FileItem from './FileItem.vue';
 import type { FileInfo } from '@/core/file-service';
+import { t } from '@/services/i18n-service';
 
 interface Props {
   /** 文件列表 */
@@ -280,7 +281,7 @@ onUnmounted(() => {
     class="file-tree"
     tabindex="0"
     role="tree"
-    aria-label="file.tree_label"
+    :aria-label="t('file.tree_label')"
   >
     <template v-if="files.length > 0">
       <template v-for="file in flattenedFiles" :key="file.path">
@@ -303,7 +304,7 @@ onUnmounted(() => {
     <template v-else>
       <div class="file-tree__empty">
         <span class="file-tree__empty-icon">📁</span>
-        <span class="file-tree__empty-text">file.empty_folder</span>
+        <span class="file-tree__empty-text">{{ t('file.empty_folder') }}</span>
       </div>
     </template>
   </div>

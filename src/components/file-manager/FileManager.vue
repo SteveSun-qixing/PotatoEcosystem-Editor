@@ -366,7 +366,7 @@ async function handleContextMenuAction(actionId: string, targetFiles: FileInfo[]
 
     case 'reveal':
       // TODO: 实现在资源管理器中显示
-      console.log('Reveal in finder:', targetFiles[0]?.path);
+      console.warn('Reveal in finder:', targetFiles[0]?.path);
       break;
   }
 }
@@ -393,7 +393,10 @@ function handleKeyDown(event: KeyboardEvent): void {
     case 'F2':
       if (selectedFiles.value.length === 1) {
         event.preventDefault();
-        renamingPath.value = selectedFiles.value[0]!.path;
+        const [selectedFile] = selectedFiles.value;
+        if (selectedFile) {
+          renamingPath.value = selectedFile.path;
+        }
       }
       break;
 
@@ -431,7 +434,10 @@ function handleKeyDown(event: KeyboardEvent): void {
 
     case 'Enter':
       if (selectedFiles.value.length === 1) {
-        const file = selectedFiles.value[0]!;
+        const [file] = selectedFiles.value;
+        if (!file) {
+          break;
+        }
         if (file.isDirectory) {
           handleToggle(file);
         } else {

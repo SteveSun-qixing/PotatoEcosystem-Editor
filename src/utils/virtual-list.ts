@@ -109,10 +109,13 @@ export function useVirtualList<T>(
    */
   function getHeight(index: number): number {
     if (getItemHeight) {
-      if (!heightCache.has(index)) {
-        heightCache.set(index, getItemHeight(index));
+      const cachedHeight = heightCache.get(index);
+      if (cachedHeight !== undefined) {
+        return cachedHeight;
       }
-      return heightCache.get(index)!;
+      const computedHeight = getItemHeight(index);
+      heightCache.set(index, computedHeight);
+      return computedHeight;
     }
     return itemHeight;
   }
